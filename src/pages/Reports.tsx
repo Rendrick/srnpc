@@ -4,7 +4,7 @@ import { mockResponses, calculateNpsScore, getDistribution, type ExamType } from
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell } from "recharts";
 import { subDays, parseISO } from "date-fns";
 import { ThumbsUp, Minus, ThumbsDown, TrendingUp } from "lucide-react";
 
