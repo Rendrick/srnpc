@@ -1,15 +1,16 @@
+import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { mockResponses, calculateNpsScore, getDistribution } from "@/data/mockNps";
+import { calculateNpsScore, getDistribution } from "@/data/mockNps";
+import { getSurveys, getUnifiedResponsesFromStore } from "@/data/surveyStore";
+import type { UnifiedNpsResponse } from "@/data/surveyStore";
+import type { Survey } from "@/types/survey";
 import { Users, TrendingUp, ThumbsUp, ThumbsDown, Minus } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { format, subDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { useMemo } from "react";
-
-const npsScore = calculateNpsScore(mockResponses);
-const dist = getDistribution(mockResponses);
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function getNpsColor(score: number) {
   if (score >= 50) return "text-nps-promoter";
@@ -17,13 +18,61 @@ function getNpsColor(score: number) {
   return "text-nps-detractor";
 }
 
+async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
+  let fromStore: UnifiedNpsResponse[] = [];
+  try {
+    fromStore = await getUnifiedResponsesFromStore();
+  } catch {
+    // Se o Supabase falhar, o dashboard fica vazio.
+    fromStore = [];
+  }
+  return fromStore.sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export default function Dashboard() {
+  const [surveyFilter, setSurveyFilter] = useState<string>("all");
+  const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [allResponses, setAllResponses] = useState<UnifiedNpsResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await buildUnifiedResponses();
+        const s = await getSurveys();
+        if (cancelled) return;
+        setSurveys(s);
+        setAllResponses(res);
+      } catch {
+        if (cancelled) return;
+        setSurveys([]);
+        // buildUnifiedResponses já protege falhas do store; aqui só tratamos erro do getSurveys.
+        setAllResponses(await buildUnifiedResponses());
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (surveyFilter === "all") return allResponses;
+    return allResponses.filter((r) => r.surveyId === surveyFilter);
+  }, [allResponses, surveyFilter]);
+
+  const npsScore = useMemo(() => calculateNpsScore(filtered), [filtered]);
+  const dist = useMemo(() => getDistribution(filtered), [filtered]);
+
   const trendData = useMemo(() => {
     const weeks: { label: string; nps: number }[] = [];
     for (let i = 11; i >= 0; i--) {
       const end = subDays(new Date(), i * 7);
       const start = subDays(end, 7);
-      const weekResponses = mockResponses.filter((r) => {
+      const weekResponses = filtered.filter((r) => {
         const d = parseISO(r.date);
         return d >= start && d <= end;
       });
@@ -33,24 +82,53 @@ export default function Dashboard() {
       });
     }
     return weeks;
-  }, []);
+  }, [filtered]);
 
-  const pieData = [
-    { name: "Promotores", value: dist.promoters.count, color: "hsl(var(--nps-promoter))" },
-    { name: "Neutros", value: dist.neutrals.count, color: "hsl(var(--nps-neutral))" },
-    { name: "Detratores", value: dist.detractors.count, color: "hsl(var(--nps-detractor))" },
-  ];
+  const pieData = useMemo(
+    () => [
+      { name: "Promotores", value: dist.promoters.count, color: "hsl(var(--nps-promoter))" },
+      { name: "Neutros", value: dist.neutrals.count, color: "hsl(var(--nps-neutral))" },
+      { name: "Detratores", value: dist.detractors.count, color: "hsl(var(--nps-detractor))" },
+    ],
+    [dist]
+  );
 
-  const avgScore = mockResponses.length
-    ? (mockResponses.reduce((s, r) => s + r.score, 0) / mockResponses.length).toFixed(1)
-    : "0";
+  const avgScore =
+    filtered.length > 0
+      ? (filtered.reduce((s, r) => s + r.score, 0) / filtered.length).toFixed(1)
+      : "0";
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <p className="text-muted-foreground">Carregando...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Dashboard NPS</h2>
-          <p className="text-muted-foreground">Visão geral da satisfação dos pacientes</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Dashboard NPS</h2>
+            <p className="text-muted-foreground">Visão geral da satisfação dos pacientes</p>
+          </div>
+          <Select value={surveyFilter} onValueChange={setSurveyFilter}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Pesquisa" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as pesquisas</SelectItem>
+              {surveys.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name} {s.sector ? `(${s.sector})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* KPI Cards */}
@@ -74,7 +152,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total de Respostas</p>
-                  <p className="text-4xl font-extrabold text-foreground">{mockResponses.length}</p>
+                  <p className="text-4xl font-extrabold text-foreground">{filtered.length}</p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                   <Users className="w-6 h-6 text-primary" />

@@ -16,7 +16,7 @@ const items = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Respostas", url: "/respostas", icon: MessageSquareText },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
-  { title: "Nova Pesquisa", url: "/pesquisa", icon: ClipboardPlus },
+  { title: "Pesquisas", url: "/pesquisa", icon: ClipboardPlus },
 ];
 
 export function AppSidebar() {

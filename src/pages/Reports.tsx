@@ -1,6 +1,9 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
-import { mockResponses, calculateNpsScore, getDistribution, type ExamType } from "@/data/mockNps";
+import { calculateNpsScore, getDistribution } from "@/data/mockNps";
+import { getSurveys, getUnifiedResponsesFromStore } from "@/data/surveyStore";
+import type { UnifiedNpsResponse } from "@/data/surveyStore";
+import type { Survey } from "@/types/survey";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -14,34 +17,71 @@ const periods = [
   { label: "Últimos 90 dias", days: 90 },
 ];
 
-const examTypes: ExamType[] = ["Raio-X", "Tomografia", "Ressonância", "Ultrassom", "Mamografia"];
+async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
+  let fromStore: UnifiedNpsResponse[] = [];
+  try {
+    fromStore = await getUnifiedResponsesFromStore();
+  } catch {
+    fromStore = [];
+  }
+  return fromStore.sort((a, b) => b.date.localeCompare(a.date));
+}
 
 export default function Reports() {
   const [periodDays, setPeriodDays] = useState("30");
-  const [examFilter, setExamFilter] = useState("all");
+  const [surveyFilter, setSurveyFilter] = useState("all");
+  const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [allResponses, setAllResponses] = useState<UnifiedNpsResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await buildUnifiedResponses();
+        let s: Survey[] = [];
+        try {
+          s = await getSurveys();
+        } catch {
+          s = [];
+        }
+        if (cancelled) return;
+        setAllResponses(res);
+        setSurveys(s);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const cutoff = subDays(new Date(), parseInt(periodDays));
-    return mockResponses.filter((r) => {
+    return allResponses.filter((r) => {
       const d = parseISO(r.date);
       if (d < cutoff) return false;
-      if (examFilter !== "all" && r.examType !== examFilter) return false;
+      if (surveyFilter !== "all" && r.surveyId !== surveyFilter) return false;
       return true;
     });
-  }, [periodDays, examFilter]);
+  }, [periodDays, surveyFilter, allResponses]);
 
   const nps = calculateNpsScore(filtered);
   const dist = getDistribution(filtered);
 
-  const examChart = useMemo(() => {
-    return examTypes.map((exam) => {
-      const examResponses = filtered.filter((r) => r.examType === exam);
+  const surveyChart = useMemo(() => {
+    const surveyIds = [...new Set(filtered.map((r) => r.surveyId))];
+    return surveyIds.map((surveyId) => {
+      const surveyResponses = filtered.filter((r) => r.surveyId === surveyId);
+      const name = surveyResponses[0]?.surveyName ?? "Pesquisa";
       return {
-        exam,
-        nps: calculateNpsScore(examResponses),
-        count: examResponses.length,
+        exam: name,
+        nps: calculateNpsScore(surveyResponses),
+        count: surveyResponses.length,
       };
-    });
+    }).filter((row) => row.count > 0);
   }, [filtered]);
 
   const scoreDistribution = useMemo(() => {
@@ -53,6 +93,16 @@ export default function Reports() {
       fill: score >= 9 ? "hsl(var(--nps-promoter))" : score >= 7 ? "hsl(var(--nps-neutral))" : "hsl(var(--nps-detractor))",
     }));
   }, [filtered]);
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <p className="text-muted-foreground">Carregando...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
@@ -71,12 +121,12 @@ export default function Reports() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={examFilter} onValueChange={setExamFilter}>
-            <SelectTrigger className="w-[200px]"><SelectValue placeholder="Tipo de exame" /></SelectTrigger>
+          <Select value={surveyFilter} onValueChange={setSurveyFilter}>
+            <SelectTrigger className="w-[220px]"><SelectValue placeholder="Pesquisa" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos os exames</SelectItem>
-              {examTypes.map((e) => (
-                <SelectItem key={e} value={e}>{e}</SelectItem>
+              <SelectItem value="all">Todas as pesquisas</SelectItem>
+              {surveys.map((s) => (
+                <SelectItem key={s.id} value={s.id}>{s.name} {s.sector ? `(${s.sector})` : ""}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -143,15 +193,15 @@ export default function Reports() {
             </CardContent>
           </Card>
 
-          {/* NPS by Exam */}
+          {/* NPS por Pesquisa */}
           <Card>
-            <CardHeader><CardTitle className="text-base">NPS por Tipo de Exame</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">NPS por Pesquisa / Setor</CardTitle></CardHeader>
             <CardContent>
               <ChartContainer config={{ nps: { label: "NPS", color: "hsl(var(--primary))" } }} className="h-[280px]">
-                <BarChart data={examChart} layout="vertical">
+                <BarChart data={surveyChart} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis type="number" domain={[-100, 100]} />
-                  <YAxis type="category" dataKey="exam" width={100} />
+                  <YAxis type="category" dataKey="exam" width={120} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Bar dataKey="nps" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
                 </BarChart>

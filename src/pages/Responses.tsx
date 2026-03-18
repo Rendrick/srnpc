@@ -1,6 +1,9 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
-import { mockResponses, getCategory, getCategoryLabel, type NpsCategory, type ExamType } from "@/data/mockNps";
+import { getCategory, getCategoryLabel, type NpsCategory } from "@/data/mockNps";
+import { getSurveys, getUnifiedResponsesFromStore } from "@/data/surveyStore";
+import type { UnifiedNpsResponse } from "@/data/surveyStore";
+import type { Survey } from "@/types/survey";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,6 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+
+async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
+  let fromStore: UnifiedNpsResponse[] = [];
+  try {
+    fromStore = await getUnifiedResponsesFromStore();
+  } catch {
+    fromStore = [];
+  }
+  return fromStore.sort((a, b) => b.date.localeCompare(a.date));
+}
 
 const badgeClass: Record<NpsCategory, string> = {
   promoter: "bg-nps-promoter/15 text-nps-promoter border-nps-promoter/30",
@@ -18,16 +31,57 @@ const badgeClass: Record<NpsCategory, string> = {
 export default function Responses() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [examFilter, setExamFilter] = useState<string>("all");
+  const [surveyFilter, setSurveyFilter] = useState<string>("all");
+  const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [allResponses, setAllResponses] = useState<UnifiedNpsResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await buildUnifiedResponses();
+        const s = await getSurveys();
+        if (cancelled) return;
+        setAllResponses(res);
+        setSurveys(s);
+      } catch {
+        if (cancelled) return;
+        setAllResponses(await buildUnifiedResponses());
+        setSurveys([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
-    return mockResponses.filter((r) => {
+    return allResponses.filter((r) => {
       if (categoryFilter !== "all" && getCategory(r.score) !== categoryFilter) return false;
-      if (examFilter !== "all" && r.examType !== examFilter) return false;
-      if (search && !r.comment.toLowerCase().includes(search.toLowerCase()) && !r.patientName.toLowerCase().includes(search.toLowerCase())) return false;
+      if (surveyFilter !== "all" && r.surveyId !== surveyFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        const comment = (r.comment ?? "").toLowerCase();
+        const name = r.surveyName.toLowerCase();
+        if (!comment.includes(q) && !name.includes(q)) return false;
+      }
       return true;
     });
-  }, [search, categoryFilter, examFilter]);
+  }, [allResponses, search, categoryFilter, surveyFilter]);
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <p className="text-muted-foreground">Carregando...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
@@ -40,7 +94,7 @@ export default function Responses() {
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Buscar por nome ou comentário..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder="Buscar por pesquisa ou comentário..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="Categoria" /></SelectTrigger>
@@ -51,12 +105,12 @@ export default function Responses() {
               <SelectItem value="detractor">Detratores</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={examFilter} onValueChange={setExamFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Exame" /></SelectTrigger>
+          <Select value={surveyFilter} onValueChange={setSurveyFilter}>
+            <SelectTrigger className="w-[200px]"><SelectValue placeholder="Pesquisa" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos exames</SelectItem>
-              {(["Raio-X", "Tomografia", "Ressonância", "Ultrassom", "Mamografia"] as ExamType[]).map((e) => (
-                <SelectItem key={e} value={e}>{e}</SelectItem>
+              <SelectItem value="all">Todas as pesquisas</SelectItem>
+              {surveys.map((s) => (
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -67,8 +121,7 @@ export default function Responses() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-16">Nota</TableHead>
-                <TableHead>Paciente</TableHead>
-                <TableHead className="hidden md:table-cell">Exame</TableHead>
+                <TableHead>Pesquisa / Setor</TableHead>
                 <TableHead className="hidden lg:table-cell">Comentário</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead className="text-right">Data</TableHead>
@@ -84,9 +137,11 @@ export default function Responses() {
                         {r.score}
                       </span>
                     </TableCell>
-                    <TableCell className="font-medium">{r.patientName}</TableCell>
-                    <TableCell className="hidden md:table-cell">{r.examType}</TableCell>
-                    <TableCell className="hidden lg:table-cell max-w-xs truncate text-muted-foreground">{r.comment}</TableCell>
+                    <TableCell className="font-medium">
+                      {r.surveyName}
+                      {r.sector ? ` · ${r.sector}` : ""}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell max-w-xs truncate text-muted-foreground">{r.comment ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={badgeClass[cat]}>{getCategoryLabel(cat)}</Badge>
                     </TableCell>
