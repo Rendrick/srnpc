@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
+import { Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,37 +42,49 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardContent className="p-6 space-y-4">
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">Acessar Admin</h2>
-            <p className="text-sm text-muted-foreground">Use seu email e senha.</p>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4">
+      <Card className="w-full max-w-md border-border/80 shadow-lg">
+        <CardContent className="p-8 space-y-6">
+          <div className="flex flex-col items-center text-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shadow-sm">
+              <Activity className="w-7 h-7 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">ServiceRapide NPS</h1>
+              <p className="text-sm text-muted-foreground mt-1">Acesse a área administrativa com seu email e senha.</p>
+            </div>
           </div>
 
-          <label className="text-sm font-medium text-foreground">Email</label>
-          <Input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="voce@exemplo.com"
-            disabled={loading}
-          />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Email</label>
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="voce@exemplo.com"
+                disabled={loading}
+                autoComplete="email"
+              />
+            </div>
 
-          <label className="text-sm font-medium text-foreground">Senha</label>
-          <Input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Sua senha"
-            type="password"
-            disabled={loading}
-          />
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Senha</label>
+              <Input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Sua senha"
+                type="password"
+                disabled={loading}
+                autoComplete="current-password"
+              />
+            </div>
 
-          <Button onClick={handleSignInWithPassword} className="w-full" size="lg" disabled={loading}>
-            {loading ? "Entrando..." : "Entrar"}
-          </Button>
+            <Button onClick={handleSignInWithPassword} className="w-full" size="lg" disabled={loading}>
+              {loading ? "Entrando..." : "Entrar"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

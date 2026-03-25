@@ -11,11 +11,14 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useClinic } from "@/hooks/useClinic";
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { clinicId } = useParams<{ clinicId?: string }>();
+  const { name: clinicName, loading: clinicLoading } = useClinic(clinicId);
 
   const base = clinicId ? `/clinicas/${clinicId}` : "/clinicas";
 
@@ -26,17 +29,27 @@ export function AppSidebar() {
     { title: "Pesquisas", url: `${base}/pesquisa`, icon: ClipboardPlus },
   ];
 
+  const subtitleLine = !clinicId
+    ? "Área administrativa"
+    : clinicLoading
+      ? null
+      : clinicName ?? "Clínica";
+
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
-        <div className="p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-sidebar-primary flex items-center justify-center shrink-0">
+        <div className="p-4 flex items-center gap-3 border-b border-sidebar-border/60">
+          <div className="w-9 h-9 rounded-lg bg-sidebar-primary flex items-center justify-center shrink-0 shadow-sm">
             <Activity className="w-5 h-5 text-sidebar-primary-foreground" />
           </div>
           {!collapsed && (
-            <div className="overflow-hidden">
-              <h2 className="text-sm font-bold text-sidebar-foreground truncate">RadioClínica NPS</h2>
-              <p className="text-xs text-sidebar-foreground/60 truncate">Sistema de Avaliação</p>
+            <div className="overflow-hidden min-w-0 flex-1">
+              <h2 className="text-sm font-semibold text-sidebar-foreground truncate leading-tight">ServiceRapide NPS</h2>
+              {clinicId && clinicLoading ? (
+                <Skeleton className="h-3.5 w-32 max-w-full mt-1.5 bg-sidebar-accent" />
+              ) : (
+                <p className="text-xs text-sidebar-foreground/70 truncate mt-0.5">{subtitleLine}</p>
+              )}
             </div>
           )}
         </div>
