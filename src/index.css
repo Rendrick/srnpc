@@ -100,3 +100,38 @@
     font-family: 'Plus Jakarta Sans', sans-serif;
   }
 }
+
+@keyframes npsEmojiFlip {
+  0% {
+    transform: perspective(650px) rotateX(0deg) scale(1);
+    opacity: 1;
+    filter: blur(0px);
+  }
+  45% {
+    transform: perspective(650px) rotateX(90deg) scale(0.92);
+    opacity: 0;
+    filter: blur(1px);
+  }
+  55% {
+    transform: perspective(650px) rotateX(-90deg) scale(0.92);
+    opacity: 0;
+    filter: blur(1px);
+  }
+  100% {
+    transform: perspective(650px) rotateX(0deg) scale(1);
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+.nps-emoji-flip {
+  display: inline-block;
+  transform-origin: 50% 70%;
+  animation: npsEmojiFlip 420ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nps-emoji-flip {
+    animation: none;
+  }
+}

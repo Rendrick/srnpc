@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { calculateNpsScore, getDistribution } from "@/data/mockNps";
@@ -18,10 +19,10 @@ function getNpsColor(score: number) {
   return "text-nps-detractor";
 }
 
-async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
+async function buildUnifiedResponses(clinicId: string): Promise<UnifiedNpsResponse[]> {
   let fromStore: UnifiedNpsResponse[] = [];
   try {
-    fromStore = await getUnifiedResponsesFromStore();
+    fromStore = await getUnifiedResponsesFromStore(clinicId);
   } catch {
     // Se o Supabase falhar, o dashboard fica vazio.
     fromStore = [];
@@ -30,6 +31,7 @@ async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
 }
 
 export default function Dashboard() {
+  const { clinicId } = useParams<{ clinicId: string }>();
   const [surveyFilter, setSurveyFilter] = useState<string>("all");
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [allResponses, setAllResponses] = useState<UnifiedNpsResponse[]>([]);
@@ -39,8 +41,9 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await buildUnifiedResponses();
-        const s = await getSurveys();
+        if (!clinicId) return;
+        const res = await buildUnifiedResponses(clinicId);
+        const s = await getSurveys(clinicId);
         if (cancelled) return;
         setSurveys(s);
         setAllResponses(res);
@@ -57,7 +60,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clinicId]);
 
   const filtered = useMemo(() => {
     if (surveyFilter === "all") return allResponses;

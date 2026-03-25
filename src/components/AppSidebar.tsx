@@ -1,6 +1,6 @@
 import { LayoutDashboard, MessageSquareText, BarChart3, ClipboardPlus, Activity } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -12,17 +12,19 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const items = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Respostas", url: "/respostas", icon: MessageSquareText },
-  { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
-  { title: "Pesquisas", url: "/pesquisa", icon: ClipboardPlus },
-];
-
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
+  const { clinicId } = useParams<{ clinicId?: string }>();
+
+  const base = clinicId ? `/clinicas/${clinicId}` : "/clinicas";
+
+  const items = [
+    { title: "Dashboard", url: base, icon: LayoutDashboard },
+    { title: "Respostas", url: `${base}/respostas`, icon: MessageSquareText },
+    { title: "Relatórios", url: `${base}/relatorios`, icon: BarChart3 },
+    { title: "Pesquisas", url: `${base}/pesquisa`, icon: ClipboardPlus },
+  ];
 
   return (
     <Sidebar collapsible="icon">
@@ -46,7 +48,7 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
-                      end={item.url === "/"}
+                      end={item.url === "/clinicas"}
                       className="hover:bg-sidebar-accent/50"
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold"
                     >

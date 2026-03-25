@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,15 +20,17 @@ import {
 import { toast } from "sonner";
 
 export default function SurveyList() {
+  const { clinicId } = useParams<{ clinicId: string }>();
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!clinicId) return;
     let cancelled = false;
     (async () => {
       try {
-        const data = await getSurveys();
+        const data = await getSurveys(clinicId);
         if (!cancelled) setSurveys(data);
       } catch (e) {
         toast.error("Falha ao carregar as pesquisas.");
@@ -40,12 +42,13 @@ export default function SurveyList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clinicId]);
 
   const handleDelete = async (id: string) => {
     try {
       await deleteSurvey(id);
-      const data = await getSurveys();
+      if (!clinicId) return;
+      const data = await getSurveys(clinicId);
       setSurveys(data);
       toast.success("Pesquisa removida.");
     } catch {
@@ -56,7 +59,8 @@ export default function SurveyList() {
   };
 
   const copyPublicUrl = (slug: string) => {
-    const url = `${window.location.origin}/p/${slug}`;
+    if (!clinicId) return;
+    const url = `${window.location.origin}/p/${clinicId}/${slug}`;
     navigator.clipboard.writeText(url);
     toast.success("Link copiado!");
   };
@@ -70,7 +74,7 @@ export default function SurveyList() {
             <p className="text-muted-foreground">Crie e gerencie pesquisas NPS por setor</p>
           </div>
           <Button asChild>
-            <Link to="/pesquisa/nova">
+            <Link to={`/clinicas/${clinicId}/pesquisa/nova`}>
               <ClipboardPlus className="w-4 h-4 mr-2" />
               Nova pesquisa
             </Link>
@@ -88,7 +92,7 @@ export default function SurveyList() {
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <p className="text-muted-foreground mb-4">Nenhuma pesquisa criada ainda.</p>
               <Button asChild>
-                <Link to="/pesquisa/nova">
+                <Link to={`/clinicas/${clinicId}/pesquisa/nova`}>
                   <ClipboardPlus className="w-4 h-4 mr-2" />
                   Criar primeira pesquisa
                 </Link>
@@ -111,7 +115,7 @@ export default function SurveyList() {
                       {survey.status === "published" ? "Publicada" : "Rascunho"}
                     </Badge>
                     <Button variant="outline" size="icon" asChild>
-                      <Link to={`/pesquisa/${survey.id}/editar`} title="Editar">
+                      <Link to={`/clinicas/${clinicId}/pesquisa/${survey.id}/editar`} title="Editar">
                         <Pencil className="w-4 h-4" />
                       </Link>
                     </Button>

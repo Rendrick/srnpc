@@ -12,6 +12,7 @@ export type SurveyStatus = "draft" | "published";
 
 export interface Survey {
   id: string;
+  clinicId: string;
   slug: string;
   name: string;
   sector: string;

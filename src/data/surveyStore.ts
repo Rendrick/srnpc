@@ -4,6 +4,7 @@ import { getSupabaseClient } from "@/lib/supabaseClient";
 type SurveyRow = {
   id: string;
   slug: string;
+  clinic_id: string | null;
   name: string;
   sector: string | null;
   questions: Survey["questions"];
@@ -21,6 +22,7 @@ type SurveyResponseRow = {
 function toSurvey(row: SurveyRow): Survey {
   return {
     id: row.id,
+    clinicId: String(row.clinic_id ?? ""),
     slug: row.slug,
     name: row.name,
     sector: row.sector ?? "",
@@ -39,35 +41,39 @@ function toResponse(row: SurveyResponseRow): SurveyResponse {
   };
 }
 
-export async function getSurveys(): Promise<Survey[]> {
+export async function getSurveys(clinicId: string): Promise<Survey[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("surveys")
-    .select("id,slug,name,sector,questions,status,created_at")
+    .select("id,slug,clinic_id,name,sector,questions,status,created_at")
+    .eq("clinic_id", clinicId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   return (data as SurveyRow[]).map(toSurvey);
 }
 
-export async function getSurveyById(id: string): Promise<Survey | undefined> {
+export async function getSurveyById(id: string, clinicId?: string): Promise<Survey | undefined> {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  let q = supabase
     .from("surveys")
-    .select("id,slug,name,sector,questions,status,created_at")
-    .eq("id", id)
-    .maybeSingle();
+    .select("id,slug,clinic_id,name,sector,questions,status,created_at")
+    .eq("id", id);
+  if (clinicId) q = q.eq("clinic_id", clinicId);
+
+  const { data, error } = await q.maybeSingle();
 
   if (error) throw error;
   return data ? toSurvey(data as SurveyRow) : undefined;
 }
 
-export async function getSurveyBySlug(slug: string): Promise<Survey | undefined> {
+export async function getSurveyBySlug(slug: string, clinicId: string): Promise<Survey | undefined> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("surveys")
-    .select("id,slug,name,sector,questions,status,created_at")
+    .select("id,slug,clinic_id,name,sector,questions,status,created_at")
     .eq("slug", slug)
+    .eq("clinic_id", clinicId)
     .eq("status", "published")
     .maybeSingle();
 
@@ -82,6 +88,7 @@ export async function saveSurvey(survey: Survey): Promise<void> {
   const row = {
     id: survey.id,
     slug: survey.slug,
+    clinic_id: survey.clinicId,
     name: survey.name,
     sector: survey.sector ?? "",
     questions: survey.questions,
@@ -99,14 +106,20 @@ export async function deleteSurvey(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function getResponses(surveyId?: string): Promise<SurveyResponse[]> {
+export async function getResponses(surveyId?: string, clinicId?: string): Promise<SurveyResponse[]> {
   const supabase = getSupabaseClient();
-  let query = supabase
-    .from("survey_responses")
-    .select("id,survey_id,answers,date")
-    .order("date", { ascending: false });
+  let query = supabase.from("survey_responses").select("id,survey_id,answers,date");
 
-  if (surveyId) query = query.eq("survey_id", surveyId);
+  if (surveyId) {
+    query = query.eq("survey_id", surveyId);
+  } else if (clinicId) {
+    const surveys = await getSurveys(clinicId);
+    const ids = surveys.map((s) => s.id);
+    if (ids.length === 0) return [];
+    query = query.in("survey_id", ids);
+  }
+
+  query = query.order("date", { ascending: false });
 
   const { data, error } = await query;
   if (error) throw error;
@@ -156,11 +169,12 @@ export function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export function createSurvey(name: string, sector: string): Survey {
+export function createSurvey(clinicId: string, name: string, sector: string): Survey {
   const id = generateId();
   const baseSlug = slugify(name || sector || id);
   return {
     id,
+    clinicId,
     slug: baseSlug,
     name: name || "Nova pesquisa",
     sector: sector || "",
@@ -172,13 +186,15 @@ export function createSurvey(name: string, sector: string): Survey {
 
 export async function isSlugAvailable(
   slug: string,
+  clinicId: string,
   excludeSurveyId?: string
 ): Promise<boolean> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("surveys")
     .select("id")
-    .eq("slug", slug);
+    .eq("slug", slug)
+    .eq("clinic_id", clinicId);
 
   if (error) throw error;
   return !((data ?? []) as Array<{ id: string }>).some((s) => s.id !== excludeSurveyId);
@@ -200,9 +216,13 @@ export interface UnifiedNpsResponse {
 }
 
 /** Converte respostas do banco para um formato unificado com score (dashboard/relatórios). */
-export async function getUnifiedResponsesFromStore(): Promise<UnifiedNpsResponse[]> {
-  const [responses, surveys] = await Promise.all([getResponses(), getSurveys()]);
+export async function getUnifiedResponsesFromStore(clinicId: string): Promise<UnifiedNpsResponse[]> {
+  const surveys = await getSurveys(clinicId);
   const surveyById = new Map<string, Survey>(surveys.map((s) => [s.id, s]));
+
+  if (surveys.length === 0) return [];
+
+  const responses = await getResponses(undefined, clinicId);
 
   const result: UnifiedNpsResponse[] = [];
   for (const r of responses) {

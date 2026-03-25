@@ -55,7 +55,7 @@ function addQuestion(type: QuestionType): SurveyQuestion {
 }
 
 export default function SurveyEdit() {
-  const { id } = useParams<{ id: string }>();
+  const { clinicId, id } = useParams<{ clinicId: string; id?: string }>();
   const navigate = useNavigate();
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,6 +67,8 @@ export default function SurveyEdit() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (!clinicId) return;
+
       if (!id) {
         setSurvey(null);
         setName("");
@@ -78,7 +80,7 @@ export default function SurveyEdit() {
 
       setLoading(true);
       try {
-        const s = await getSurveyById(id);
+        const s = await getSurveyById(id, clinicId);
         if (cancelled) return;
 
         if (s) {
@@ -86,10 +88,12 @@ export default function SurveyEdit() {
           setName(s.name);
           setSector(s.sector);
           setQuestions(s.questions);
-          setPublishedLink(s.status === "published" ? `${window.location.origin}/p/${s.slug}` : null);
+          setPublishedLink(
+            s.status === "published" ? `${window.location.origin}/p/${clinicId}/${s.slug}` : null
+          );
         } else {
           toast.error("Pesquisa não encontrada.");
-          navigate("/pesquisa");
+          navigate(`/clinicas/${clinicId}/pesquisa`);
         }
       } catch {
         toast.error("Falha ao carregar a pesquisa.");
@@ -101,18 +105,19 @@ export default function SurveyEdit() {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate]);
+  }, [id, clinicId, navigate]);
 
   const handleSaveDraft = async () => {
     const slug = survey?.slug ?? slugify(name || sector || "pesquisa");
     const baseSlug = slug;
     let finalSlug = baseSlug;
     let n = 0;
-    while (!(await isSlugAvailable(finalSlug, survey?.id))) {
+    while (!(await isSlugAvailable(finalSlug, clinicId ?? survey?.clinicId ?? "", survey?.id))) {
       finalSlug = `${baseSlug}-${++n}`;
     }
     const toSave: Survey = {
       id: survey?.id ?? `survey-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      clinicId: clinicId ?? survey?.clinicId ?? "",
       slug: finalSlug,
       name: name || "Nova pesquisa",
       sector,
@@ -129,7 +134,7 @@ export default function SurveyEdit() {
     }
 
     setSurvey(toSave);
-    if (!id) navigate(`/pesquisa/${toSave.id}/editar`, { replace: true });
+    if (!id) navigate(`/clinicas/${clinicId}/pesquisa/${toSave.id}/editar`, { replace: true });
     toast.success("Rascunho salvo.");
   };
 
@@ -142,11 +147,12 @@ export default function SurveyEdit() {
     const baseSlug = slug || "pesquisa";
     let finalSlug = baseSlug;
     let n = 0;
-    while (!(await isSlugAvailable(finalSlug, survey?.id))) {
+    while (!(await isSlugAvailable(finalSlug, clinicId ?? survey?.clinicId ?? "", survey?.id))) {
       finalSlug = `${baseSlug}-${++n}`;
     }
     const toSave: Survey = {
       id: survey?.id ?? `survey-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      clinicId: clinicId ?? survey?.clinicId ?? "",
       slug: finalSlug,
       name: name || "Nova pesquisa",
       sector,
@@ -163,7 +169,7 @@ export default function SurveyEdit() {
     }
 
     setSurvey(toSave);
-    setPublishedLink(`${window.location.origin}/p/${toSave.slug}`);
+    setPublishedLink(`${window.location.origin}/p/${clinicId}/${toSave.slug}`);
     toast.success("Pesquisa publicada! O link está pronto para compartilhar.");
   };
 
@@ -227,7 +233,7 @@ export default function SurveyEdit() {
     );
   };
 
-  if (loading || (id && !survey)) return null;
+  if (loading || (!survey && !!id) || !clinicId) return null;
 
   return (
     <AdminLayout>
@@ -242,7 +248,7 @@ export default function SurveyEdit() {
             </p>
           </div>
           <Button variant="outline" asChild>
-            <Link to="/pesquisa">Voltar</Link>
+            <Link to={`/clinicas/${clinicId}/pesquisa`}>Voltar</Link>
           </Button>
         </div>
 

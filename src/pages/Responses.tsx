@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
 import { getCategory, getCategoryLabel, type NpsCategory } from "@/data/mockNps";
 import { getSurveys, getUnifiedResponsesFromStore } from "@/data/surveyStore";
@@ -12,10 +13,10 @@ import { Search } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
+async function buildUnifiedResponses(clinicId: string): Promise<UnifiedNpsResponse[]> {
   let fromStore: UnifiedNpsResponse[] = [];
   try {
-    fromStore = await getUnifiedResponsesFromStore();
+    fromStore = await getUnifiedResponsesFromStore(clinicId);
   } catch {
     fromStore = [];
   }
@@ -29,6 +30,7 @@ const badgeClass: Record<NpsCategory, string> = {
 };
 
 export default function Responses() {
+  const { clinicId } = useParams<{ clinicId: string }>();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [surveyFilter, setSurveyFilter] = useState<string>("all");
@@ -40,14 +42,15 @@ export default function Responses() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await buildUnifiedResponses();
-        const s = await getSurveys();
+        if (!clinicId) return;
+        const res = await buildUnifiedResponses(clinicId);
+        const s = await getSurveys(clinicId);
         if (cancelled) return;
         setAllResponses(res);
         setSurveys(s);
       } catch {
         if (cancelled) return;
-        setAllResponses(await buildUnifiedResponses());
+        setAllResponses(await buildUnifiedResponses(clinicId));
         setSurveys([]);
       } finally {
         if (!cancelled) setLoading(false);
@@ -57,7 +60,7 @@ export default function Responses() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clinicId]);
 
   const filtered = useMemo(() => {
     return allResponses.filter((r) => {

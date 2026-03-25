@@ -1,15 +1,48 @@
--- Esquema do Supabase para o app NPS.
--- Cenário atual: admin funciona sem Auth (telas públicas), e
--- respondentes podem inserir apenas em pesquisas com status = 'published'.
-
+-- Esquema do Supabase para o app NPS (multi-clínicas).
+-- Cenário:
+-- - Página pública (/p/:slug): anon pode ler surveys publicadas e inserir respostas.
+-- - Área admin: usuários autenticados só podem ver/criar/editar/apagar surveys e respostas
+--   vinculadas a clínicas às quais estão associados.
+-- - Superadmin: via tabela `superadmins` (gerenciamento via Edge Function usando service_role).
+--
 -- Sugestão: execute este script via Supabase SQL Editor.
+
+-- =========
+-- Tabela: clinics
+-- =========
+create table if not exists public.clinics (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+-- =========
+-- Tabela: clinic_members
+-- =========
+create table if not exists public.clinic_members (
+  clinic_id uuid not null references public.clinics (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  role text not null default 'member',
+  created_at timestamptz not null default now(),
+  primary key (clinic_id, user_id)
+);
+
+-- =========
+-- Tabela: superadmins
+-- =========
+create table if not exists public.superadmins (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
 
 -- =========
 -- Tabela: surveys
 -- =========
+-- id continua text (padrão do app atual).
 create table if not exists public.surveys (
   id text primary key,
-  slug text not null unique,
+  slug text not null,
+  clinic_id uuid references public.clinics (id) on delete cascade,
   name text not null,
   sector text not null default '',
   questions jsonb not null default '[]'::jsonb,
@@ -17,7 +50,15 @@ create table if not exists public.surveys (
   created_at timestamptz not null default now()
 );
 
+-- Remover unicidade global de slug (para permitir mesmo slug em clínicas diferentes).
+alter table public.surveys drop constraint if exists surveys_slug_key;
+
+-- Unicidade por clínica.
+create unique index if not exists surveys_clinic_id_slug_unique
+  on public.surveys (clinic_id, slug);
+
 create index if not exists surveys_status_idx on public.surveys (status);
+create index if not exists surveys_clinic_id_idx on public.surveys (clinic_id);
 
 -- =========
 -- Tabela: survey_responses
@@ -35,29 +76,75 @@ create index if not exists survey_responses_date_idx on public.survey_responses 
 -- =========
 -- RLS
 -- =========
+alter table public.clinic_members enable row level security;
 alter table public.surveys enable row level security;
 alter table public.survey_responses enable row level security;
 
--- Em modo "mixed" (sem Auth no app por enquanto), liberamos RW completo para anon.
--- Isso permite que as telas de admin funcionem sem login.
-drop policy if exists surveys_anon_rw on public.surveys;
-create policy surveys_anon_rw
-on public.surveys
-for all
-to anon
-using (true)
-with check (true);
+-- =========
+-- Políticas: clinic_members
+-- =========
+drop policy if exists clinic_members_select_self on public.clinic_members;
+create policy clinic_members_select_self
+on public.clinic_members
+for select
+to authenticated
+using (
+  user_id = auth.uid()
+  or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
 
--- survey_responses: respondentes podem inserir apenas se survey_id pertencer a uma survey publicada.
-drop policy if exists survey_responses_select_anon on public.survey_responses;
-create policy survey_responses_select_anon
-on public.survey_responses
+-- =========
+-- Políticas: surveys
+-- =========
+drop policy if exists surveys_anon_published_select on public.surveys;
+create policy surveys_anon_published_select
+on public.surveys
 for select
 to anon
-using (true);
+using (status = 'published');
 
-drop policy if exists survey_responses_insert_published_anon on public.survey_responses;
-create policy survey_responses_insert_published_anon
+drop policy if exists surveys_member_crud on public.surveys;
+create policy surveys_member_crud
+on public.surveys
+for all
+to authenticated
+using (
+  exists (
+    select 1
+    from public.clinic_members cm
+    where cm.user_id = auth.uid()
+      and cm.clinic_id = surveys.clinic_id
+  )
+  or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.clinic_members cm
+    where cm.user_id = auth.uid()
+      and cm.clinic_id = surveys.clinic_id
+  )
+  or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+-- =========
+-- Políticas: survey_responses
+-- =========
+-- Respostas podem ser inseridas publicamente, mas apenas para surveys publicadas.
+drop policy if exists survey_responses_anon_insert_published on public.survey_responses;
+create policy survey_responses_anon_insert_published
 on public.survey_responses
 for insert
 to anon
@@ -70,11 +157,45 @@ with check (
   )
 );
 
--- Delete: necessário para o cascade funcionar quando admin remover uma survey.
-drop policy if exists survey_responses_delete_anon on public.survey_responses;
-create policy survey_responses_delete_anon
+-- Admin (authenticated) lê respostas apenas das clínicas do usuário.
+drop policy if exists survey_responses_member_select on public.survey_responses;
+create policy survey_responses_member_select
+on public.survey_responses
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.surveys s
+    join public.clinic_members cm on cm.clinic_id = s.clinic_id
+    where s.id = survey_id
+      and cm.user_id = auth.uid()
+  )
+  or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+-- Delete via cascade (ao deletar a survey) precisa de policy para permitir o delete das respostas.
+drop policy if exists survey_responses_member_delete on public.survey_responses;
+create policy survey_responses_member_delete
 on public.survey_responses
 for delete
-to anon
-using (true);
+to authenticated
+using (
+  exists (
+    select 1
+    from public.surveys s
+    join public.clinic_members cm on cm.clinic_id = s.clinic_id
+    where s.id = survey_id
+      and cm.user_id = auth.uid()
+  )
+  or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
 

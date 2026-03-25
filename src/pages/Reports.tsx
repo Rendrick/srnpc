@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
 import { calculateNpsScore, getDistribution } from "@/data/mockNps";
 import { getSurveys, getUnifiedResponsesFromStore } from "@/data/surveyStore";
@@ -17,10 +18,10 @@ const periods = [
   { label: "Últimos 90 dias", days: 90 },
 ];
 
-async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
+async function buildUnifiedResponses(clinicId: string): Promise<UnifiedNpsResponse[]> {
   let fromStore: UnifiedNpsResponse[] = [];
   try {
-    fromStore = await getUnifiedResponsesFromStore();
+    fromStore = await getUnifiedResponsesFromStore(clinicId);
   } catch {
     fromStore = [];
   }
@@ -28,6 +29,7 @@ async function buildUnifiedResponses(): Promise<UnifiedNpsResponse[]> {
 }
 
 export default function Reports() {
+  const { clinicId } = useParams<{ clinicId: string }>();
   const [periodDays, setPeriodDays] = useState("30");
   const [surveyFilter, setSurveyFilter] = useState("all");
   const [surveys, setSurveys] = useState<Survey[]>([]);
@@ -38,10 +40,11 @@ export default function Reports() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await buildUnifiedResponses();
+        if (!clinicId) return;
+        const res = await buildUnifiedResponses(clinicId);
         let s: Survey[] = [];
         try {
-          s = await getSurveys();
+          s = await getSurveys(clinicId);
         } catch {
           s = [];
         }
@@ -56,7 +59,7 @@ export default function Reports() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clinicId]);
 
   const filtered = useMemo(() => {
     const cutoff = subDays(new Date(), parseInt(periodDays));
