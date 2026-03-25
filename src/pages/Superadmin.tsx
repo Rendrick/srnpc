@@ -12,7 +12,8 @@ import { useNavigate } from "react-router-dom";
 type Clinic = { id: string; name: string; created_at?: string };
 type Member = { clinic_id: string; user_id: string; role: string; created_at?: string };
 
-async function callSuperadmin(action: string, payload?: Record<string, unknown>) {
+/** Apenas operações que exigem Admin API (service role na Edge Function). */
+async function invokeAuthAdmin(action: string, payload?: Record<string, unknown>) {
   const supabase = getSupabaseClient();
   const invokeWithToken = async (accessToken: string) => {
     const { data: responseData, error } = await supabase.functions.invoke("superadmin", {
@@ -30,7 +31,7 @@ async function callSuperadmin(action: string, payload?: Record<string, unknown>)
       return body?.error || body?.message || error.message;
     }
     if (error instanceof Error) return error.message;
-    return "Falha ao executar ação do superadmin";
+    return "Falha na operação";
   };
 
   let {
@@ -83,20 +84,38 @@ export default function Superadmin() {
 
   const canUse = useMemo(() => !loading, [loading]);
 
+  const refreshClinics = async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("clinics")
+      .select("id, name, created_at")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    const next = (data ?? []) as Clinic[];
+    setClinics(next);
+    if (next[0]?.id) setClinicId(next[0].id);
+  };
+
+  const refreshMembers = async (id: string) => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("clinic_members")
+      .select("clinic_id, user_id, role, created_at")
+      .eq("clinic_id", id);
+    if (error) throw new Error(error.message);
+    setMembers((data ?? []) as Member[]);
+  };
+
   useEffect(() => {
     if (!canUse) return;
 
     let cancelled = false;
     (async () => {
       try {
-        const json = await callSuperadmin("list_clinics");
-        const next = (json.clinics ?? []) as Clinic[];
-        if (cancelled) return;
-        setClinics(next);
-        if (next[0]?.id) setClinicId(next[0].id);
+        await refreshClinics();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        toast.error(message);
+        if (!cancelled) toast.error(message);
       }
     })();
 
@@ -112,13 +131,10 @@ export default function Superadmin() {
     let cancelled = false;
     (async () => {
       try {
-        const json = await callSuperadmin("list_clinic_members", { clinicId });
-        const next = (json.members ?? []) as Member[];
-        if (cancelled) return;
-        setMembers(next);
+        await refreshMembers(clinicId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        toast.error(message);
+        if (!cancelled) toast.error(message);
       }
     })();
 
@@ -126,18 +142,6 @@ export default function Superadmin() {
       cancelled = true;
     };
   }, [canUse, clinicId]);
-
-  const refreshClinics = async () => {
-    const json = await callSuperadmin("list_clinics");
-    const next = (json.clinics ?? []) as Clinic[];
-    setClinics(next);
-    if (next[0]?.id) setClinicId(next[0].id);
-  };
-
-  const refreshMembers = async (id: string) => {
-    const json = await callSuperadmin("list_clinic_members", { clinicId: id });
-    setMembers((json.members ?? []) as Member[]);
-  };
 
   const handleCreateClinic = async () => {
     const name = clinicName.trim();
@@ -147,7 +151,9 @@ export default function Superadmin() {
     }
 
     try {
-      await callSuperadmin("create_clinic", { name });
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from("clinics").insert({ name }).select("id, name, created_at").single();
+      if (error) throw new Error(error.message);
       setClinicName("");
       setStatus("Clínica criada.");
       await refreshClinics();
@@ -159,7 +165,14 @@ export default function Superadmin() {
 
   const handleUpdateClinic = async () => {
     try {
-      await callSuperadmin("update_clinic", { clinicId, name: clinicNameToUpdate });
+      const supabase = getSupabaseClient();
+      const name = clinicNameToUpdate.trim();
+      if (!clinicId || !name) {
+        toast.error("Selecione a clínica e informe o novo nome.");
+        return;
+      }
+      const { error } = await supabase.from("clinics").update({ name }).eq("id", clinicId);
+      if (error) throw new Error(error.message);
       setClinicNameToUpdate("");
       setStatus("Clínica atualizada.");
       await refreshClinics();
@@ -171,7 +184,9 @@ export default function Superadmin() {
 
   const handleDeleteClinic = async (id: string) => {
     try {
-      await callSuperadmin("delete_clinic", { clinicId: id });
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from("clinics").delete().eq("id", id);
+      if (error) throw new Error(error.message);
       setStatus("Clínica removida.");
       await refreshClinics();
     } catch (err) {
@@ -182,7 +197,7 @@ export default function Superadmin() {
 
   const handleCreateUser = async () => {
     try {
-      const json = await callSuperadmin("create_user", { email: userEmail, password: userPassword });
+      const json = await invokeAuthAdmin("create_user", { email: userEmail, password: userPassword });
       const created = json.user as { id?: string } | undefined;
       const id = created?.id ?? "";
       setCreatedUserId(id);
@@ -198,7 +213,7 @@ export default function Superadmin() {
   const handleDeleteUser = async () => {
     if (!userId) return toast.error("Informe o userId para deletar.");
     try {
-      await callSuperadmin("delete_user", { userId });
+      await invokeAuthAdmin("delete_user", { userId });
       setStatus("Usuário removido.");
       setUserId("");
       setCreatedUserId("");
@@ -211,7 +226,14 @@ export default function Superadmin() {
   const handleSetSuperadmin = async (isSuper: boolean) => {
     if (!userId) return toast.error("Informe o userId para definir superadmin.");
     try {
-      await callSuperadmin("set_superadmin", { userId, isSuper });
+      const supabase = getSupabaseClient();
+      if (isSuper) {
+        const { error } = await supabase.from("superadmins").upsert({ user_id: userId }, { onConflict: "user_id" });
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await supabase.from("superadmins").delete().eq("user_id", userId);
+        if (error) throw new Error(error.message);
+      }
       setStatus(isSuper ? "Promovido a superadmin." : "Removido de superadmin.");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -223,7 +245,13 @@ export default function Superadmin() {
     if (!clinicId) return toast.error("Selecione a clínica.");
     if (!userId) return toast.error("Informe o userId para associar.");
     try {
-      await callSuperadmin("add_clinic_member", { clinicId, userId, role: memberRole });
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from("clinic_members").insert({
+        clinic_id: clinicId,
+        user_id: userId,
+        role: memberRole.trim() || "member",
+      });
+      if (error) throw new Error(error.message);
       setStatus("Membro associado.");
       await refreshMembers(clinicId);
     } catch (err) {
@@ -236,7 +264,9 @@ export default function Superadmin() {
     if (!clinicId) return toast.error("Selecione a clínica.");
     if (!userId) return toast.error("Informe o userId para remover.");
     try {
-      await callSuperadmin("remove_clinic_member", { clinicId, userId });
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from("clinic_members").delete().eq("clinic_id", clinicId).eq("user_id", userId);
+      if (error) throw new Error(error.message);
       setStatus("Membro removido.");
       await refreshMembers(clinicId);
     } catch (err) {
@@ -403,4 +433,3 @@ export default function Superadmin() {
     </div>
   );
 }
-

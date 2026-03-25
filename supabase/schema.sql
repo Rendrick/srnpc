@@ -3,7 +3,7 @@
 -- - Página pública (/p/:slug): anon pode ler surveys publicadas e inserir respostas.
 -- - Área admin: usuários autenticados só podem ver/criar/editar/apagar surveys e respostas
 --   vinculadas a clínicas às quais estão associados.
--- - Superadmin: via tabela `superadmins` (gerenciamento via Edge Function usando service_role).
+-- - Superadmin: tabela `superadmins`; CRUD de clínicas/membros pelo app (RLS + JWT). Edge Function só para Admin API (criar/apagar usuário Auth).
 --
 -- Sugestão: execute este script via Supabase SQL Editor.
 
@@ -193,6 +193,127 @@ using (
       and cm.user_id = auth.uid()
   )
   or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+-- =========
+-- RLS: clinics + superadmins + membros (CRUD pelo app com JWT; sem depender da Edge Function)
+-- Se o banco já existia, rode só este bloco no SQL Editor.
+-- =========
+alter table public.clinics enable row level security;
+
+drop policy if exists clinics_select_member on public.clinics;
+create policy clinics_select_member
+on public.clinics
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.clinic_members cm
+    where cm.clinic_id = clinics.id
+      and cm.user_id = auth.uid()
+  )
+);
+
+drop policy if exists clinics_superadmin_all on public.clinics;
+create policy clinics_superadmin_all
+on public.clinics
+for all
+to authenticated
+using (
+  exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+alter table public.superadmins enable row level security;
+
+drop policy if exists superadmins_select_own on public.superadmins;
+create policy superadmins_select_own
+on public.superadmins
+for select
+to authenticated
+using (user_id = auth.uid());
+
+drop policy if exists superadmins_insert_by_superadmin on public.superadmins;
+create policy superadmins_insert_by_superadmin
+on public.superadmins
+for insert
+to authenticated
+with check (
+  exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+drop policy if exists superadmins_delete_by_superadmin on public.superadmins;
+create policy superadmins_delete_by_superadmin
+on public.superadmins
+for delete
+to authenticated
+using (
+  exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+drop policy if exists clinic_members_superadmin_insert on public.clinic_members;
+create policy clinic_members_superadmin_insert
+on public.clinic_members
+for insert
+to authenticated
+with check (
+  exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+drop policy if exists clinic_members_superadmin_update on public.clinic_members;
+create policy clinic_members_superadmin_update
+on public.clinic_members
+for update
+to authenticated
+using (
+  exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+drop policy if exists clinic_members_superadmin_delete on public.clinic_members;
+create policy clinic_members_superadmin_delete
+on public.clinic_members
+for delete
+to authenticated
+using (
+  exists (
     select 1
     from public.superadmins sa
     where sa.user_id = auth.uid()
