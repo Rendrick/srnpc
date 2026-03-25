@@ -141,19 +141,22 @@ export async function addResponse(
     date: new Date().toISOString().slice(0, 10),
   };
 
-  const { data, error } = await supabase
-    .from("survey_responses")
-    .insert({
-      id: newResponse.id,
-      survey_id: newResponse.surveyId,
-      answers: newResponse.answers,
-      date: newResponse.date,
-    })
-    .select("id,survey_id,answers,date")
-    .single();
+  // Sem .select(): o role anon não tem política de SELECT em survey_responses; o PostgREST
+  // devolveria 403 ao tentar ler a linha após o INSERT (Prefer: return=representation).
+  const { error } = await supabase.from("survey_responses").insert({
+    id: newResponse.id,
+    survey_id: newResponse.surveyId,
+    answers: newResponse.answers,
+    date: newResponse.date,
+  });
 
   if (error) throw error;
-  return toResponse(data as SurveyResponseRow);
+  return toResponse({
+    id: newResponse.id,
+    survey_id: newResponse.surveyId,
+    answers: newResponse.answers,
+    date: newResponse.date,
+  } as SurveyResponseRow);
 }
 
 function generateId(): string {

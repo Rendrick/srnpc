@@ -157,6 +157,21 @@ with check (
   )
 );
 
+-- Mesma regra para usuários autenticados (ex.: respondente com sessão aberta no app).
+drop policy if exists survey_responses_authenticated_insert_published on public.survey_responses;
+create policy survey_responses_authenticated_insert_published
+on public.survey_responses
+for insert
+to authenticated
+with check (
+  exists (
+    select 1
+    from public.surveys s
+    where s.id = survey_id
+      and s.status = 'published'
+  )
+);
+
 -- Admin (authenticated) lê respostas apenas das clínicas do usuário.
 drop policy if exists survey_responses_member_select on public.survey_responses;
 create policy survey_responses_member_select
