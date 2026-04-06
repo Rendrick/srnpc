@@ -1,5 +1,6 @@
 import type { ClinicSector, Survey, SurveyResponse } from "@/types/survey";
 import { getSupabaseClient } from "@/lib/supabaseClient";
+import { isClinicsSlugMissingError } from "@/lib/supabaseErrors";
 
 const SURVEY_SELECT_ADMIN =
   "id,slug,clinic_id,name,sector,sector_id,questions,status,created_at,clinic_sectors(id,name)";
@@ -280,10 +281,31 @@ export async function generateUniqueClinicSlug(displayName: string): Promise<str
   const base = slugify(displayName) || "clinica";
   for (let n = 0; n < 200; n++) {
     const candidate = n === 0 ? base : `${base}-${n}`;
-    const { data } = await supabase.from("clinics").select("id").eq("slug", candidate).maybeSingle();
+    const { data, error } = await supabase.from("clinics").select("id").eq("slug", candidate).maybeSingle();
+    if (error && isClinicsSlugMissingError(error)) {
+      return candidate;
+    }
+    if (error) throw error;
     if (!data) return candidate;
   }
   return `${base}-${Date.now()}`;
+}
+
+export type ClinicListRow = { id: string; name: string; slug?: string | null; created_at?: string };
+
+/** Lista clínicas por id; faz fallback se a coluna `slug` ainda não existir na BD. */
+export async function listClinicsByIds(ids: string[]): Promise<ClinicListRow[]> {
+  const supabase = getSupabaseClient();
+  if (ids.length === 0) return [];
+  let { data, error } = await supabase
+    .from("clinics")
+    .select("id, name, slug, created_at")
+    .in("id", ids);
+  if (error && isClinicsSlugMissingError(error)) {
+    ({ data, error } = await supabase.from("clinics").select("id, name, created_at").in("id", ids));
+  }
+  if (error) throw error;
+  return (data ?? []) as ClinicListRow[];
 }
 
 /** Resolve segmento de rota (UUID legado ou slug) para id + slug canónico. */
@@ -293,26 +315,32 @@ export async function resolveClinicRouteParam(param: string): Promise<ResolvedCl
   if (!trimmed) return null;
 
   if (CLINIC_UUID_REGEX.test(trimmed)) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("clinics")
       .select("id, slug, name")
       .eq("id", trimmed)
       .maybeSingle();
+    if (error && isClinicsSlugMissingError(error)) {
+      ({ data, error } = await supabase.from("clinics").select("id, name").eq("id", trimmed).maybeSingle());
+    }
     if (error) throw error;
     if (!data?.id) return null;
-    const row = data as { id: string; slug: string | null; name: string };
+    const row = data as { id: string; slug?: string | null; name: string };
     return { id: row.id, slug: row.slug?.trim() || trimmed, name: row.name };
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("clinics")
     .select("id, slug, name")
     .eq("slug", trimmed)
     .maybeSingle();
+  if (error && isClinicsSlugMissingError(error)) {
+    return null;
+  }
   if (error) throw error;
-  if (!data?.id || !data.slug) return null;
+  if (!data?.id || !(data as { slug?: string | null }).slug?.trim()) return null;
   const row = data as { id: string; slug: string; name: string };
-  return { id: row.id, slug: row.slug, name: row.name };
+  return { id: row.id, slug: row.slug.trim(), name: row.name };
 }
 
 export function createSurvey(clinicId: string, name: string, sector: string): Survey {

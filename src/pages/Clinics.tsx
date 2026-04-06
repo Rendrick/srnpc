@@ -5,14 +5,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getSupabaseClient } from "@/lib/supabaseClient";
+import { formatSupabaseClientError } from "@/lib/supabaseErrors";
+import { listClinicsByIds, type ClinicListRow } from "@/data/surveyStore";
 import { useAuth } from "@/lib/AuthContext";
 
-type Clinic = {
-  id: string;
-  name: string;
-  slug?: string | null;
-  created_at?: string;
-};
+type Clinic = ClinicListRow;
 
 export default function Clinics() {
   const navigate = useNavigate();
@@ -42,13 +39,7 @@ export default function Clinics() {
           return;
         }
 
-        const { data: clinicsData, error: clinicsErr } = await supabase
-          .from("clinics")
-          .select("id, name, slug, created_at")
-          .in("id", clinicIds);
-        if (clinicsErr) throw clinicsErr;
-
-        const list = (clinicsData ?? []) as Clinic[];
+        const list = await listClinicsByIds(clinicIds);
 
         if (!cancelled) setClinics(list);
 
@@ -57,7 +48,7 @@ export default function Clinics() {
           navigate(`/clinicas/${seg}`, { replace: true });
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = formatSupabaseClientError(err);
         if (!cancelled) toast.error(`Falha ao carregar clínicas: ${message}`);
       } finally {
         if (!cancelled) setLoading(false);

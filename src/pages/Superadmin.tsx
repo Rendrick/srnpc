@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { generateUniqueClinicSlug } from "@/data/surveyStore";
+import { isClinicsSlugMissingError } from "@/lib/supabaseErrors";
 
 type Clinic = { id: string; name: string; slug?: string | null; created_at?: string };
 type Member = { clinic_id: string; user_id: string; role: string; created_at?: string };
@@ -82,15 +83,22 @@ export default function Superadmin() {
 
   const [createdUserId, setCreatedUserId] = useState<string>("");
   const [status, setStatus] = useState<string>("");
+  const [fillingSlugs, setFillingSlugs] = useState(false);
 
   const canUse = useMemo(() => !loading, [loading]);
 
   const refreshClinics = async () => {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("clinics")
       .select("id, name, slug, created_at")
       .order("created_at", { ascending: false });
+    if (error && isClinicsSlugMissingError(error)) {
+      ({ data, error } = await supabase
+        .from("clinics")
+        .select("id, name, created_at")
+        .order("created_at", { ascending: false }));
+    }
     if (error) throw new Error(error.message);
     const next = (data ?? []) as Clinic[];
     setClinics(next);
@@ -144,6 +152,45 @@ export default function Superadmin() {
     };
   }, [canUse, clinicId]);
 
+  const handleFillMissingSlugs = async () => {
+    if (clinics.length === 0) {
+      toast.info("Não há clínicas.");
+      return;
+    }
+    setFillingSlugs(true);
+    try {
+      const supabase = getSupabaseClient();
+      const needs = clinics.filter((c) => !c.slug?.trim());
+      if (needs.length === 0) {
+        toast.info("Todas as clínicas já têm slug.");
+        return;
+      }
+      let done = 0;
+      for (const c of needs) {
+        const slug = await generateUniqueClinicSlug(c.name);
+        const { error } = await supabase.from("clinics").update({ slug }).eq("id", c.id);
+        if (error) {
+          if (isClinicsSlugMissingError(error)) {
+            toast.error(
+              "A coluna slug não existe neste projeto. Execute supabase/backfill_clinic_slugs.sql no SQL Editor."
+            );
+            return;
+          }
+          throw new Error(error.message);
+        }
+        done++;
+      }
+      setStatus(`${done} slug(s) gerado(s). URLs passam a usar o identificador legível.`);
+      toast.success(`${done} slug(s) preenchido(s).`);
+      await refreshClinics();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message);
+    } finally {
+      setFillingSlugs(false);
+    }
+  };
+
   const handleCreateClinic = async () => {
     const name = clinicName.trim();
     if (!name) {
@@ -154,11 +201,15 @@ export default function Superadmin() {
     try {
       const supabase = getSupabaseClient();
       const slug = await generateUniqueClinicSlug(name);
-      const { error } = await supabase
+      let ins = await supabase
         .from("clinics")
         .insert({ name, slug })
         .select("id, name, slug, created_at")
         .single();
+      if (ins.error && isClinicsSlugMissingError(ins.error)) {
+        ins = await supabase.from("clinics").insert({ name }).select("id, name, created_at").single();
+      }
+      const { error } = ins;
       if (error) throw new Error(error.message);
       setClinicName("");
       setStatus("Clínica criada.");
@@ -302,7 +353,16 @@ export default function Superadmin() {
 
               <div className="space-y-2">
                 <Input value={clinicName} onChange={(e) => setClinicName(e.target.value)} placeholder="Nome da clínica" />
-                <Button onClick={handleCreateClinic}>Criar clínica</Button>
+                <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
+                  <Button onClick={handleCreateClinic}>Criar clínica</Button>
+                  <Button type="button" variant="outline" onClick={handleFillMissingSlugs} disabled={fillingSlugs}>
+                    {fillingSlugs ? "Gerando slugs…" : "Preencher slugs em falta"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Gera slugs a partir do nome para clínicas sem slug (URLs amigáveis). Alternativa: executar{" "}
+                  <span className="font-mono">supabase/backfill_clinic_slugs.sql</span> no SQL Editor.
+                </p>
               </div>
 
               <div className="space-y-2">

@@ -20,11 +20,8 @@ create table if not exists public.clinics (
 alter table public.clinics add column if not exists slug text;
 create unique index if not exists clinics_slug_unique on public.clinics (slug) where slug is not null;
 
--- Backfill sugerido (SQL Editor): gerar slug a partir do nome e corrigir duplicatas.
--- update public.clinics c set slug = sub.nslug from (
---   select id, trim(both '-' from lower(regexp_replace(trim(name), '[^a-zA-Z0-9]+', '-', 'g'))) as nslug from public.clinics
--- ) sub where c.id = sub.id and (c.slug is null or c.slug = '');
--- update public.clinics set slug = slug || '-' || left(replace(id::text, '-', ''), 8) where slug in (select slug from public.clinics group by slug having count(*) > 1);
+-- Backfill em instalações antigas: copiar e colar no SQL Editor o ficheiro supabase/backfill_clinic_slugs.sql
+-- (gera slug a partir do nome, fallback e desduplicação).
 
 -- =========
 -- Tabela: clinic_members
