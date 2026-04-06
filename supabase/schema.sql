@@ -36,6 +36,28 @@ create table if not exists public.superadmins (
 );
 
 -- =========
+-- Tabela: clinic_sectors (setores por clínica, para filtros e relatórios)
+-- =========
+create table if not exists public.clinic_sectors (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references public.clinics (id) on delete cascade,
+  name text not null,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  unique (clinic_id, name)
+);
+
+create index if not exists clinic_sectors_clinic_id_idx on public.clinic_sectors (clinic_id);
+
+-- Migração opcional (SQL Editor): popular setores a partir do texto legacy e ligar pesquisas
+-- insert into public.clinic_sectors (clinic_id, name)
+--   select distinct clinic_id, trim(sector) from public.surveys where trim(sector) <> ''
+--   on conflict (clinic_id, name) do nothing;
+-- update public.surveys s set sector_id = cs.id
+--   from public.clinic_sectors cs
+--   where cs.clinic_id = s.clinic_id and cs.name = trim(s.sector) and s.sector_id is null;
+
+-- =========
 -- Tabela: surveys
 -- =========
 -- id continua text (padrão do app atual).
@@ -60,6 +82,10 @@ create unique index if not exists surveys_clinic_id_slug_unique
 create index if not exists surveys_status_idx on public.surveys (status);
 create index if not exists surveys_clinic_id_idx on public.surveys (clinic_id);
 
+-- Referência opcional a setor cadastrado (texto legacy em surveys.sector permanece para anon/exibição).
+alter table public.surveys add column if not exists sector_id uuid references public.clinic_sectors (id) on delete set null;
+create index if not exists surveys_sector_id_idx on public.surveys (sector_id);
+
 -- =========
 -- Tabela: survey_responses
 -- =========
@@ -77,6 +103,7 @@ create index if not exists survey_responses_date_idx on public.survey_responses 
 -- RLS
 -- =========
 alter table public.clinic_members enable row level security;
+alter table public.clinic_sectors enable row level security;
 alter table public.surveys enable row level security;
 alter table public.survey_responses enable row level security;
 
@@ -90,6 +117,41 @@ for select
 to authenticated
 using (
   user_id = auth.uid()
+  or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+);
+
+-- =========
+-- Políticas: clinic_sectors
+-- =========
+drop policy if exists clinic_sectors_member_all on public.clinic_sectors;
+create policy clinic_sectors_member_all
+on public.clinic_sectors
+for all
+to authenticated
+using (
+  exists (
+    select 1
+    from public.clinic_members cm
+    where cm.clinic_id = clinic_sectors.clinic_id
+      and cm.user_id = auth.uid()
+  )
+  or exists (
+    select 1
+    from public.superadmins sa
+    where sa.user_id = auth.uid()
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.clinic_members cm
+    where cm.clinic_id = clinic_sectors.clinic_id
+      and cm.user_id = auth.uid()
+  )
   or exists (
     select 1
     from public.superadmins sa

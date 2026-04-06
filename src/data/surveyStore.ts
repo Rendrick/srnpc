@@ -1,5 +1,10 @@
-import type { Survey, SurveyResponse } from "@/types/survey";
+import type { ClinicSector, Survey, SurveyResponse } from "@/types/survey";
 import { getSupabaseClient } from "@/lib/supabaseClient";
+
+const SURVEY_SELECT_ADMIN =
+  "id,slug,clinic_id,name,sector,sector_id,questions,status,created_at,clinic_sectors(id,name)";
+const SURVEY_SELECT_PUBLIC =
+  "id,slug,clinic_id,name,sector,sector_id,questions,status,created_at";
 
 type SurveyRow = {
   id: string;
@@ -7,8 +12,18 @@ type SurveyRow = {
   clinic_id: string | null;
   name: string;
   sector: string | null;
+  sector_id: string | null;
   questions: Survey["questions"];
   status: Survey["status"];
+  created_at: string;
+  clinic_sectors?: { id: string; name: string } | { id: string; name: string }[] | null;
+};
+
+type SectorRow = {
+  id: string;
+  clinic_id: string;
+  name: string;
+  sort_order: number;
   created_at: string;
 };
 
@@ -19,17 +34,97 @@ type SurveyResponseRow = {
   date: string;
 };
 
+function normalizeSectorEmbed(
+  embed: SurveyRow["clinic_sectors"]
+): { name: string } | null {
+  if (!embed || typeof embed !== "object") return null;
+  if (Array.isArray(embed)) {
+    const first = embed[0];
+    return first && typeof first.name === "string" ? { name: first.name } : null;
+  }
+  return typeof embed.name === "string" ? { name: embed.name } : null;
+}
+
 function toSurvey(row: SurveyRow): Survey {
+  const cs = normalizeSectorEmbed(row.clinic_sectors);
+  const linkedName = cs?.name?.trim();
+  const legacyName = row.sector?.trim() ?? "";
+  const sector = linkedName || legacyName;
   return {
     id: row.id,
     clinicId: String(row.clinic_id ?? ""),
     slug: row.slug,
     name: row.name,
-    sector: row.sector ?? "",
+    sector,
+    sectorId: row.sector_id ?? null,
     questions: (row.questions ?? []) as Survey["questions"],
     status: row.status,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
   };
+}
+
+function toSector(row: SectorRow): ClinicSector {
+  return {
+    id: row.id,
+    clinicId: row.clinic_id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+  };
+}
+
+export async function listSectors(clinicId: string): Promise<ClinicSector[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("clinic_sectors")
+    .select("id,clinic_id,name,sort_order,created_at")
+    .eq("clinic_id", clinicId)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  return ((data ?? []) as SectorRow[]).map(toSector);
+}
+
+export async function createSector(clinicId: string, name: string): Promise<ClinicSector> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("clinic_sectors")
+    .insert({ clinic_id: clinicId, name: name.trim(), sort_order: 0 })
+    .select("id,clinic_id,name,sort_order,created_at")
+    .single();
+
+  if (error) throw error;
+  return toSector(data as SectorRow);
+}
+
+export async function updateSector(
+  sectorId: string,
+  clinicId: string,
+  patch: { name?: string; sortOrder?: number }
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  const row: Record<string, unknown> = {};
+  if (patch.name !== undefined) row.name = patch.name.trim();
+  if (patch.sortOrder !== undefined) row.sort_order = patch.sortOrder;
+  const { error } = await supabase
+    .from("clinic_sectors")
+    .update(row)
+    .eq("id", sectorId)
+    .eq("clinic_id", clinicId);
+
+  if (error) throw error;
+}
+
+export async function deleteSector(sectorId: string, clinicId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from("clinic_sectors")
+    .delete()
+    .eq("id", sectorId)
+    .eq("clinic_id", clinicId);
+
+  if (error) throw error;
 }
 
 function toResponse(row: SurveyResponseRow): SurveyResponse {
@@ -45,7 +140,7 @@ export async function getSurveys(clinicId: string): Promise<Survey[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("surveys")
-    .select("id,slug,clinic_id,name,sector,questions,status,created_at")
+    .select(SURVEY_SELECT_ADMIN)
     .eq("clinic_id", clinicId)
     .order("created_at", { ascending: false });
 
@@ -55,10 +150,7 @@ export async function getSurveys(clinicId: string): Promise<Survey[]> {
 
 export async function getSurveyById(id: string, clinicId?: string): Promise<Survey | undefined> {
   const supabase = getSupabaseClient();
-  let q = supabase
-    .from("surveys")
-    .select("id,slug,clinic_id,name,sector,questions,status,created_at")
-    .eq("id", id);
+  let q = supabase.from("surveys").select(SURVEY_SELECT_ADMIN).eq("id", id);
   if (clinicId) q = q.eq("clinic_id", clinicId);
 
   const { data, error } = await q.maybeSingle();
@@ -71,7 +163,7 @@ export async function getSurveyBySlug(slug: string, clinicId: string): Promise<S
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("surveys")
-    .select("id,slug,clinic_id,name,sector,questions,status,created_at")
+    .select(SURVEY_SELECT_PUBLIC)
     .eq("slug", slug)
     .eq("clinic_id", clinicId)
     .eq("status", "published")
@@ -91,6 +183,7 @@ export async function saveSurvey(survey: Survey): Promise<void> {
     clinic_id: survey.clinicId,
     name: survey.name,
     sector: survey.sector ?? "",
+    sector_id: survey.sectorId ?? null,
     questions: survey.questions,
     status: survey.status,
     created_at: createdAt.toISOString(),
@@ -181,6 +274,7 @@ export function createSurvey(clinicId: string, name: string, sector: string): Su
     slug: baseSlug,
     name: name || "Nova pesquisa",
     sector: sector || "",
+    sectorId: null,
     questions: [],
     status: "draft",
     createdAt: new Date().toISOString(),
@@ -215,6 +309,7 @@ export interface UnifiedNpsResponse {
   surveyId: string;
   surveyName: string;
   sector: string;
+  sectorId?: string | null;
   comment?: string;
 }
 
@@ -252,6 +347,7 @@ export async function getUnifiedResponsesFromStore(clinicId: string): Promise<Un
         surveyId: r.surveyId,
         surveyName: survey?.name ?? "Pesquisa",
         sector: survey?.sector ?? "",
+        sectorId: survey?.sectorId ?? null,
         comment: commentEntry ? String(r.answers[commentEntry.id]) : undefined,
       });
     }

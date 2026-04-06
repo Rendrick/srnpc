@@ -25,20 +25,22 @@ import {
   Plus,
   Save,
   Send,
+  LayoutTemplate,
 } from "lucide-react";
 import {
   getSurveyById,
   saveSurvey,
-  createSurvey,
   slugify,
   isSlugAvailable,
   generateQuestionId,
+  listSectors,
 } from "@/data/surveyStore";
-import type { Survey, SurveyQuestion, QuestionType } from "@/types/survey";
+import type { Survey, SurveyQuestion, QuestionType, ClinicSector } from "@/types/survey";
 import { toast } from "sonner";
 
 const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
   { value: "nps", label: "NPS (0 a 10)" },
+  { value: "thumbs_group", label: "Polegares (categorias)" },
   { value: "text_short", label: "Texto curto" },
   { value: "text_long", label: "Parágrafo" },
   { value: "select", label: "Múltipla escolha" },
@@ -50,8 +52,40 @@ function addQuestion(type: QuestionType): SurveyQuestion {
     type,
     label: "",
     required: false,
-    ...(type === "select" ? { options: ["Opção 1", "Opção 2"] } : {}),
+    ...(type === "select"
+      ? { options: ["Opção 1", "Opção 2"] }
+      : type === "thumbs_group"
+        ? {
+            options: ["Espera", "Estrutura", "Recepção", "Enfermagem", "Médicos"],
+          }
+        : {}),
   };
+}
+
+function hospitalPanelTemplateQuestions(): SurveyQuestion[] {
+  return [
+    {
+      id: generateQuestionId(),
+      type: "nps",
+      label:
+        "De 0 a 10, o quanto você recomendaria {{nome}} para um amigo ou familiar?",
+      required: true,
+      useSplitPublicLayout: true,
+    },
+    {
+      id: generateQuestionId(),
+      type: "thumbs_group",
+      label: "",
+      required: true,
+      options: ["Espera", "Estrutura", "Recepção", "Enfermagem", "Médicos"],
+    },
+    {
+      id: generateQuestionId(),
+      type: "text_long",
+      label: "Como podemos melhorar?",
+      required: false,
+    },
+  ];
 }
 
 export default function SurveyEdit() {
@@ -61,8 +95,26 @@ export default function SurveyEdit() {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
   const [sector, setSector] = useState("");
+  const [sectorId, setSectorId] = useState<string>("");
+  const [sectors, setSectors] = useState<ClinicSector[]>([]);
   const [questions, setQuestions] = useState<SurveyQuestion[]>([]);
   const [publishedLink, setPublishedLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!clinicId) return;
+      try {
+        const list = await listSectors(clinicId);
+        if (!cancelled) setSectors(list);
+      } catch {
+        if (!cancelled) setSectors([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +125,7 @@ export default function SurveyEdit() {
         setSurvey(null);
         setName("");
         setSector("");
+        setSectorId("");
         setQuestions([]);
         setPublishedLink(null);
         return;
@@ -87,6 +140,7 @@ export default function SurveyEdit() {
           setSurvey(s);
           setName(s.name);
           setSector(s.sector);
+          setSectorId(s.sectorId ?? "");
           setQuestions(s.questions);
           setPublishedLink(
             s.status === "published" ? `${window.location.origin}/p/${clinicId}/${s.slug}` : null
@@ -121,6 +175,7 @@ export default function SurveyEdit() {
       slug: finalSlug,
       name: name || "Nova pesquisa",
       sector,
+      sectorId: sectorId || null,
       questions,
       status: survey?.status ?? "draft",
       createdAt: survey?.createdAt ?? new Date().toISOString(),
@@ -134,7 +189,9 @@ export default function SurveyEdit() {
     }
 
     setSurvey(toSave);
-    if (!id) navigate(`/clinicas/${clinicId}/pesquisa/${toSave.id}/editar`, { replace: true });
+    if (!id) {
+      navigate(`/clinicas/${clinicId}/pesquisa`, { replace: true });
+    }
     toast.success("Rascunho salvo.");
   };
 
@@ -156,6 +213,7 @@ export default function SurveyEdit() {
       slug: finalSlug,
       name: name || "Nova pesquisa",
       sector,
+      sectorId: sectorId || null,
       questions,
       status: "published",
       createdAt: survey?.createdAt ?? new Date().toISOString(),
@@ -171,6 +229,9 @@ export default function SurveyEdit() {
     setSurvey(toSave);
     setPublishedLink(`${window.location.origin}/p/${clinicId}/${toSave.slug}`);
     toast.success("Pesquisa publicada! O link está pronto para compartilhar.");
+    if (!id) {
+      navigate(`/clinicas/${clinicId}/pesquisa`, { replace: true });
+    }
   };
 
   const addQuestionAt = (type: QuestionType, index: number) => {
@@ -233,6 +294,12 @@ export default function SurveyEdit() {
     );
   };
 
+  const applyHospitalTemplate = () => {
+    setName((n) => (n.trim() ? n : "Pesquisa de satisfação"));
+    setQuestions(hospitalPanelTemplateQuestions());
+    toast.success("Modelo hospital (2 painéis) aplicado. Revise o título e salve ou publique.");
+  };
+
   if (loading || (!survey && !!id) || !clinicId) return null;
 
   return (
@@ -261,35 +328,69 @@ export default function SurveyEdit() {
               placeholder="Ex: Satisfação - Atendimento"
             />
             <label className="text-sm font-medium text-foreground mt-2">Setor</label>
-            <Input
-              value={sector}
-              onChange={(e) => setSector(e.target.value)}
-              placeholder="Ex: Recepção, Laboratório"
-            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select
+                value={sectorId || "__none__"}
+                onValueChange={(v) => {
+                  if (v === "__none__") {
+                    setSectorId("");
+                    setSector("");
+                    return;
+                  }
+                  setSectorId(v);
+                  const sel = sectors.find((x) => x.id === v);
+                  setSector(sel?.name ?? "");
+                }}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Selecione o setor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Nenhum</SelectItem>
+                  {sectors.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" asChild className="shrink-0">
+                <Link to={`/clinicas/${clinicId}/setores`}>Gerenciar setores</Link>
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              O nome do setor é salvo na pesquisa para o link público e relatórios.
+            </p>
           </CardHeader>
         </Card>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="font-semibold text-foreground">Perguntas</h3>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Adicionar pergunta
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {QUESTION_TYPES.map(({ value, label }) => (
-                  <DropdownMenuItem
-                    key={value}
-                    onSelect={() => addQuestionAt(value, questions.length)}
-                  >
-                    {label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" size="sm" onClick={applyHospitalTemplate}>
+                <LayoutTemplate className="w-4 h-4 mr-2" />
+                Modelo hospital (2 painéis)
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adicionar pergunta
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {QUESTION_TYPES.map(({ value, label }) => (
+                    <DropdownMenuItem
+                      key={value}
+                      onSelect={() => addQuestionAt(value, questions.length)}
+                    >
+                      {label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           {questions.map((q, index) => (
@@ -322,8 +423,29 @@ export default function SurveyEdit() {
                     <Input
                       value={q.label}
                       onChange={(e) => updateQuestion(index, { label: e.target.value })}
-                      placeholder="Texto da pergunta"
+                      placeholder={
+                        q.type === "nps"
+                          ? "Texto da pergunta (use {{nome}} para o título da pesquisa em negrito)"
+                          : "Texto da pergunta"
+                      }
                     />
+                    {q.type === "nps" && (
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`split-${q.id}`}
+                          checked={!!q.useSplitPublicLayout}
+                          onCheckedChange={(checked) =>
+                            updateQuestion(index, { useSplitPublicLayout: !!checked })
+                          }
+                        />
+                        <label
+                          htmlFor={`split-${q.id}`}
+                          className="text-sm text-muted-foreground"
+                        >
+                          Layout público em duas colunas (estilo hospital)
+                        </label>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <Checkbox
                         id={`req-${q.id}`}
@@ -339,7 +461,7 @@ export default function SurveyEdit() {
                         Obrigatória
                       </label>
                     </div>
-                    {q.type === "select" && q.options && (
+                    {(q.type === "select" || q.type === "thumbs_group") && q.options && (
                       <div className="space-y-1 pl-2 border-l-2 border-muted">
                         {q.options.map((opt, oi) => (
                           <div key={oi} className="flex gap-2">

@@ -98,14 +98,14 @@ function generateResponses(): NpsResponse[] {
 
 export const mockResponses: NpsResponse[] = generateResponses();
 
-export function calculateNpsScore(responses: NpsResponse[]): number {
+export function calculateNpsScore(responses: Array<{ score: number }>): number {
   if (!responses.length) return 0;
-  const promoters = responses.filter(r => r.score >= 9).length;
-  const detractors = responses.filter(r => r.score <= 6).length;
+  const promoters = responses.filter((r) => r.score >= 9).length;
+  const detractors = responses.filter((r) => r.score <= 6).length;
   return Math.round(((promoters - detractors) / responses.length) * 100);
 }
 
-export function getDistribution(responses: NpsResponse[]) {
+export function getDistribution(responses: Array<{ score: number }>) {
   const total = responses.length || 1;
   const promoters = responses.filter(r => r.score >= 9).length;
   const neutrals = responses.filter(r => r.score >= 7 && r.score <= 8).length;

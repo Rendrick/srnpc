@@ -11,9 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ClipboardList, CheckCircle2, Send, ThumbsDown, ThumbsUp } from "lucide-react";
+import { ClipboardList, Send, ThumbsDown, ThumbsUp } from "lucide-react";
 import { getSurveyBySlug, addResponse } from "@/data/surveyStore";
+import { SplitHospitalSurveyLayout } from "@/components/SplitHospitalSurveyLayout";
 import type { Survey, SurveyQuestion } from "@/types/survey";
+import { thumbsRowAnswerKey } from "@/types/survey";
 import { toast } from "sonner";
 
 function getScoreColor(score: number) {
@@ -77,12 +79,23 @@ export default function PublicSurvey() {
   const validate = (): boolean => {
     if (!survey) return false;
     for (const q of survey.questions) {
-      if (q.required) {
-        const v = answers[q.id];
-        if (v === undefined || v === "" || (typeof v === "number" && isNaN(v))) {
-          toast.error(`Por favor, responda: ${q.label || "esta pergunta"}`);
-          return false;
+      if (!q.required) continue;
+      if (q.type === "thumbs_group") {
+        const opts = q.options ?? [];
+        for (let i = 0; i < opts.length; i++) {
+          const k = thumbsRowAnswerKey(q.id, i);
+          const v = answers[k];
+          if (v === undefined || (typeof v === "number" && !Number.isFinite(v))) {
+            toast.error(`Por favor, avalie: ${opts[i] || "todas as categorias"}`);
+            return false;
+          }
         }
+        continue;
+      }
+      const v = answers[q.id];
+      if (v === undefined || v === "" || (typeof v === "number" && isNaN(v))) {
+        toast.error(`Por favor, responda: ${q.label || "esta pergunta"}`);
+        return false;
       }
     }
     return true;
@@ -132,10 +145,26 @@ export default function PublicSurvey() {
     );
   }
 
+  const splitNps = survey.questions.find(
+    (q) => q.type === "nps" && q.useSplitPublicLayout
+  );
+
+  if (splitNps) {
+    return (
+      <SplitHospitalSurveyLayout
+        survey={survey}
+        splitNps={splitNps}
+        answers={answers}
+        setAnswer={setAnswer}
+        onSubmit={handleSubmit}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="max-w-lg w-full">
-        <CardContent className="p-8">
+    <div className="min-h-screen min-h-dvh flex items-center justify-center bg-background py-4 px-3 sm:p-4 overflow-x-hidden">
+      <Card className="max-w-lg w-full min-w-0 shadow-md">
+        <CardContent className="p-4 sm:p-8">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
               <ClipboardList className="w-6 h-6" />
@@ -154,16 +183,15 @@ export default function PublicSurvey() {
 
           <div className="space-y-8">
             {survey.questions.map((q) => (
-              <QuestionBlock
-                key={q.id}
-                question={q}
-                value={answers[q.id]}
-                onChange={(v) => setAnswer(q.id, v)}
-              />
+              <QuestionBlock key={q.id} question={q} answers={answers} setAnswer={setAnswer} />
             ))}
           </div>
 
-          <Button onClick={handleSubmit} className="w-full mt-6" size="lg">
+          <Button
+            onClick={handleSubmit}
+            className="w-full mt-6 touch-manipulation min-h-11"
+            size="lg"
+          >
             <Send className="w-4 h-4 mr-2" />
             Enviar avaliação
           </Button>
@@ -175,13 +203,15 @@ export default function PublicSurvey() {
 
 function QuestionBlock({
   question,
-  value,
-  onChange,
+  answers,
+  setAnswer,
 }: {
   question: SurveyQuestion;
-  value: string | number | undefined;
-  onChange: (v: string | number) => void;
+  answers: Record<string, string | number>;
+  setAnswer: (key: string, value: string | number) => void;
 }) {
+  const value = answers[question.id];
+
   if (question.type === "nps") {
     const score = typeof value === "number" ? value : value !== undefined ? Number(value) : null;
     const safeScore = score !== null && Number.isFinite(score) ? score : null;
@@ -189,7 +219,7 @@ function QuestionBlock({
       <NpsQuestionBlock
         question={question}
         score={safeScore}
-        onChange={onChange}
+        onChange={(v) => setAnswer(question.id, v)}
       />
     );
   }
@@ -203,7 +233,7 @@ function QuestionBlock({
         </label>
         <Input
           value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => setAnswer(question.id, e.target.value)}
           placeholder="Sua resposta..."
         />
       </div>
@@ -219,7 +249,7 @@ function QuestionBlock({
         </label>
         <Textarea
           value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => setAnswer(question.id, e.target.value)}
           placeholder="Conte-nos mais..."
           rows={3}
         />
@@ -236,7 +266,7 @@ function QuestionBlock({
         </label>
         <Select
           value={typeof value === "string" ? value : ""}
-          onValueChange={(v) => onChange(v)}
+          onValueChange={(v) => setAnswer(question.id, v)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Selecione..." />
@@ -253,7 +283,82 @@ function QuestionBlock({
     );
   }
 
+  if (question.type === "thumbs_group") {
+    const opts = question.options?.length ? question.options : [];
+    return (
+      <ThumbsGroupClassic
+        question={question}
+        options={opts}
+        getRowValue={(i) => {
+          const raw = answers[thumbsRowAnswerKey(question.id, i)];
+          const v = typeof raw === "number" ? raw : raw !== undefined ? Number(raw) : NaN;
+          return v === 0 || v === 1 ? v : null;
+        }}
+        onRowChange={(i, v) => setAnswer(thumbsRowAnswerKey(question.id, i), v)}
+      />
+    );
+  }
+
   return null;
+}
+
+function ThumbsGroupClassic({
+  question,
+  options,
+  getRowValue,
+  onRowChange,
+}: {
+  question: SurveyQuestion;
+  options: string[];
+  getRowValue: (rowIndex: number) => number | null;
+  onRowChange: (rowIndex: number, v: 0 | 1) => void;
+}) {
+  return (
+    <div>
+      {question.label ? (
+        <label className="text-sm font-medium text-foreground block mb-2">
+          {question.label}
+          {question.required && <span className="text-destructive ml-0.5">*</span>}
+        </label>
+      ) : null}
+      <div className="space-y-2">
+        {options.map((label, i) => {
+          const selected = getRowValue(i);
+          return (
+            <div
+              key={i}
+              className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between py-2 border-b border-border last:border-0"
+            >
+              <span className="text-sm">{label}</span>
+              <div className="flex rounded-lg border border-border overflow-hidden self-end sm:self-auto touch-manipulation shadow-sm">
+                <button
+                  type="button"
+                  className={`min-h-[44px] min-w-[48px] px-3 py-2 flex items-center justify-center ${
+                    selected === 0 ? "bg-amber-300" : "hover:bg-amber-100/80"
+                  }`}
+                  onClick={() => onRowChange(i, 0)}
+                >
+                  <ThumbsDown className="w-5 h-5 text-amber-900" strokeWidth={2.4} />
+                </button>
+                <div className="w-px bg-border" />
+                <button
+                  type="button"
+                  className={`min-h-[44px] min-w-[48px] px-3 py-2 flex items-center justify-center ${
+                    selected === 1 ? "bg-emerald-600" : "hover:bg-emerald-200/90"
+                  }`}
+                  onClick={() => onRowChange(i, 1)}
+                >
+                  <ThumbsUp
+                    className={`w-5 h-5 stroke-[2.4] ${selected === 1 ? "text-white" : "text-emerald-900"}`}
+                  />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function NpsQuestionBlock({
@@ -282,11 +387,13 @@ function NpsQuestionBlock({
         {question.required && <span className="text-destructive ml-0.5">*</span>}
       </label>
 
-      <div className="flex items-center justify-center mb-3">
-        <div className={`w-24 h-24 rounded-2xl flex items-center justify-center ${emojiClasses} shadow-sm`}>
+      <div className="flex items-center justify-center mb-4">
+        <div
+          className={`w-[6.5rem] h-[6.5rem] sm:w-24 sm:h-24 rounded-2xl flex items-center justify-center ${emojiClasses} shadow-sm`}
+        >
           <span
             key={flipNonce}
-            className="text-5xl nps-emoji-flip"
+            className="text-6xl sm:text-5xl nps-emoji-flip leading-none"
             role="img"
             aria-label={emoji}
           >
@@ -295,25 +402,27 @@ function NpsQuestionBlock({
         </div>
       </div>
 
-      <div className="grid grid-cols-11 gap-1.5 mb-2">
-        {Array.from({ length: 11 }, (_, i) => {
-          const active = score === i;
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onChange(i)}
-              className={`aspect-square rounded-lg text-sm font-bold transition-all flex flex-col items-center justify-center gap-0
+      <div className="overflow-x-auto overflow-y-visible -mx-2 px-2 pb-1 touch-pan-x">
+        <div className="grid grid-cols-11 gap-1 sm:gap-1.5 mb-2 min-w-[280px]">
+          {Array.from({ length: 11 }, (_, i) => {
+            const active = score === i;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onChange(i)}
+                className={`aspect-square min-h-[44px] min-w-0 rounded-lg text-xs sm:text-sm font-bold transition-all flex flex-col items-center justify-center gap-0 touch-manipulation
                 ${active
-                  ? `${getScoreColor(i)} scale-110 shadow-lg`
-                  : `bg-muted text-muted-foreground ${getScoreHoverColor(i)} hover:text-white`
+                  ? `${getScoreColor(i)} scale-105 sm:scale-110 shadow-lg`
+                  : `bg-muted text-muted-foreground ${getScoreHoverColor(i)} hover:text-white active:scale-95`
                 }`}
-            >
-              <span className="text-lg leading-none">{getScoreEmoji(i)}</span>
-              <span className="text-[10px] mt-0.5">{i}</span>
-            </button>
-          );
-        })}
+              >
+                <span className="text-sm sm:text-lg leading-none">{getScoreEmoji(i)}</span>
+                <span className="text-[9px] sm:text-[10px] mt-0.5">{i}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex justify-between text-xs text-muted-foreground">

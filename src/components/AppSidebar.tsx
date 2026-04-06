@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquareText, BarChart3, ClipboardPlus, Activity } from "lucide-react";
+import { LayoutDashboard, MessageSquareText, BarChart3, ClipboardPlus, Activity, Building2 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useParams } from "react-router-dom";
 import {
@@ -27,6 +27,7 @@ export function AppSidebar() {
     { title: "Respostas", url: `${base}/respostas`, icon: MessageSquareText },
     { title: "Relatórios", url: `${base}/relatorios`, icon: BarChart3 },
     { title: "Pesquisas", url: `${base}/pesquisa`, icon: ClipboardPlus },
+    { title: "Setores", url: `${base}/setores`, icon: Building2 },
   ];
 
   const subtitleLine = !clinicId

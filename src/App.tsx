@@ -11,6 +11,7 @@ import SurveyEdit from "./pages/SurveyEdit";
 import PublicSurvey from "./pages/PublicSurvey";
 import Responses from "./pages/Responses";
 import Reports from "./pages/Reports";
+import ClinicSectors from "./pages/ClinicSectors";
 import Login from "./pages/Login";
 import Clinics from "./pages/Clinics";
 import Superadmin from "./pages/Superadmin";
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/clinicas/:clinicId/pesquisa/:id/editar" element={<RequireAuth><SurveyEdit /></RequireAuth>} />
             <Route path="/clinicas/:clinicId/respostas" element={<RequireAuth><Responses /></RequireAuth>} />
             <Route path="/clinicas/:clinicId/relatorios" element={<RequireAuth><Reports /></RequireAuth>} />
+            <Route path="/clinicas/:clinicId/setores" element={<RequireAuth><ClinicSectors /></RequireAuth>} />
 
             <Route path="/" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
             <Route path="/pesquisa" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
