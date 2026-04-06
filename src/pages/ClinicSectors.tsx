@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -20,7 +21,8 @@ import { Pencil, Trash2, Plus, Building2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function ClinicSectors() {
-  const { clinicId } = useParams<{ clinicId: string }>();
+  const { clinicId, clinicSlug, loading: clinicResolving, isError } = useResolvedClinic();
+  const urlSegment = clinicSlug ?? "";
   const [sectors, setSectors] = useState<ClinicSector[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -96,7 +98,21 @@ export default function ClinicSectors() {
     }
   };
 
-  if (!clinicId) return null;
+  if (clinicResolving) {
+    return (
+      <AdminLayout>
+        <p className="text-muted-foreground">Carregando...</p>
+      </AdminLayout>
+    );
+  }
+
+  if (isError || !clinicId) {
+    return (
+      <AdminLayout>
+        <p className="text-muted-foreground">Clínica não encontrada.</p>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
@@ -112,7 +128,7 @@ export default function ClinicSectors() {
             </p>
           </div>
           <Button variant="outline" asChild>
-            <Link to={`/clinicas/${clinicId}/pesquisa`}>Voltar</Link>
+            <Link to={`/clinicas/${urlSegment}/pesquisa`}>Voltar</Link>
           </Button>
         </div>
 

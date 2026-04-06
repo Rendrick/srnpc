@@ -2,14 +2,15 @@ import { useParams } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useClinic, useClinicDocumentTitle } from "@/hooks/useClinic";
+import { useClinicDocumentTitle } from "@/hooks/useClinic";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { clinicId } = useParams<{ clinicId?: string }>();
-  const { name: clinicName, loading: clinicLoading } = useClinic(clinicId);
-  useClinicDocumentTitle(clinicId, clinicName, clinicLoading);
+  const { clinicSlug: routeClinic } = useParams<{ clinicSlug?: string }>();
+  const { clinicId, clinicName, loading: clinicLoading } = useResolvedClinic();
+  useClinicDocumentTitle(clinicId ?? undefined, clinicName, clinicLoading);
 
-  const subtitle = !clinicId
+  const subtitle = !routeClinic
     ? "Área administrativa"
     : clinicLoading
       ? null
@@ -24,7 +25,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="mr-3" />
             <div className="min-w-0 flex flex-col justify-center gap-0.5">
               <h1 className="text-base font-semibold tracking-tight text-foreground">ServiceRapide NPS</h1>
-              {clinicId && clinicLoading ? (
+              {routeClinic && clinicLoading ? (
                 <Skeleton className="h-4 w-44 max-w-full mt-0.5" />
               ) : (
                 <p className="text-sm text-muted-foreground truncate">{subtitle}</p>

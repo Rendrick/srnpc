@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { generateUniqueClinicSlug } from "@/data/surveyStore";
 
-type Clinic = { id: string; name: string; created_at?: string };
+type Clinic = { id: string; name: string; slug?: string | null; created_at?: string };
 type Member = { clinic_id: string; user_id: string; role: string; created_at?: string };
 
 /** Apenas operações que exigem Admin API (service role na Edge Function). */
@@ -88,7 +89,7 @@ export default function Superadmin() {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from("clinics")
-      .select("id, name, created_at")
+      .select("id, name, slug, created_at")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const next = (data ?? []) as Clinic[];
@@ -152,7 +153,12 @@ export default function Superadmin() {
 
     try {
       const supabase = getSupabaseClient();
-      const { error } = await supabase.from("clinics").insert({ name }).select("id, name, created_at").single();
+      const slug = await generateUniqueClinicSlug(name);
+      const { error } = await supabase
+        .from("clinics")
+        .insert({ name, slug })
+        .select("id, name, slug, created_at")
+        .single();
       if (error) throw new Error(error.message);
       setClinicName("");
       setStatus("Clínica criada.");
@@ -333,7 +339,10 @@ export default function Superadmin() {
                       <div key={c.id} className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate font-medium">{c.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{c.id}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {c.slug ? `${c.slug} · ` : ""}
+                            {c.id}
+                          </p>
                         </div>
                         <Button variant="outline" size="sm" onClick={() => handleDeleteClinic(c.id)}>
                           Apagar

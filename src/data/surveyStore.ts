@@ -265,6 +265,56 @@ export function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
+const CLINIC_UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isClinicRouteUuid(param: string): boolean {
+  return CLINIC_UUID_REGEX.test(param.trim());
+}
+
+export type ResolvedClinic = { id: string; slug: string; name: string };
+
+/** Gera um slug único global na tabela `clinics` (para insert). */
+export async function generateUniqueClinicSlug(displayName: string): Promise<string> {
+  const supabase = getSupabaseClient();
+  const base = slugify(displayName) || "clinica";
+  for (let n = 0; n < 200; n++) {
+    const candidate = n === 0 ? base : `${base}-${n}`;
+    const { data } = await supabase.from("clinics").select("id").eq("slug", candidate).maybeSingle();
+    if (!data) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+/** Resolve segmento de rota (UUID legado ou slug) para id + slug canónico. */
+export async function resolveClinicRouteParam(param: string): Promise<ResolvedClinic | null> {
+  const supabase = getSupabaseClient();
+  const trimmed = param.trim();
+  if (!trimmed) return null;
+
+  if (CLINIC_UUID_REGEX.test(trimmed)) {
+    const { data, error } = await supabase
+      .from("clinics")
+      .select("id, slug, name")
+      .eq("id", trimmed)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.id) return null;
+    const row = data as { id: string; slug: string | null; name: string };
+    return { id: row.id, slug: row.slug?.trim() || trimmed, name: row.name };
+  }
+
+  const { data, error } = await supabase
+    .from("clinics")
+    .select("id, slug, name")
+    .eq("slug", trimmed)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.id || !data.slug) return null;
+  const row = data as { id: string; slug: string; name: string };
+  return { id: row.id, slug: row.slug, name: row.name };
+}
+
 export function createSurvey(clinicId: string, name: string, sector: string): Survey {
   const id = generateId();
   const baseSlug = slugify(name || sector || id);

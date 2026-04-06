@@ -16,6 +16,16 @@ create table if not exists public.clinics (
   created_at timestamptz not null default now()
 );
 
+-- Slug amigável para URLs (/clinicas/:slug, /p/:slug/:pesquisa). Ver backfill abaixo em instalações antigas.
+alter table public.clinics add column if not exists slug text;
+create unique index if not exists clinics_slug_unique on public.clinics (slug) where slug is not null;
+
+-- Backfill sugerido (SQL Editor): gerar slug a partir do nome e corrigir duplicatas.
+-- update public.clinics c set slug = sub.nslug from (
+--   select id, trim(both '-' from lower(regexp_replace(trim(name), '[^a-zA-Z0-9]+', '-', 'g'))) as nslug from public.clinics
+-- ) sub where c.id = sub.id and (c.slug is null or c.slug = '');
+-- update public.clinics set slug = slug || '-' || left(replace(id::text, '-', ''), 8) where slug in (select slug from public.clinics group by slug having count(*) > 1);
+
 -- =========
 -- Tabela: clinic_members
 -- =========
@@ -313,6 +323,21 @@ with check (
     select 1
     from public.superadmins sa
     where sa.user_id = auth.uid()
+  )
+);
+
+-- Anon: ler clínica apenas se houver pesquisa publicada (resolver slug na URL pública).
+drop policy if exists clinics_anon_select_with_published on public.clinics;
+create policy clinics_anon_select_with_published
+on public.clinics
+for select
+to anon
+using (
+  exists (
+    select 1
+    from public.surveys s
+    where s.clinic_id = clinics.id
+      and s.status = 'published'
   )
 );
 

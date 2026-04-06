@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -89,7 +90,9 @@ function hospitalPanelTemplateQuestions(): SurveyQuestion[] {
 }
 
 export default function SurveyEdit() {
-  const { clinicId, id } = useParams<{ clinicId: string; id?: string }>();
+  const { id } = useParams<{ id?: string }>();
+  const { clinicId, clinicSlug, loading: clinicResolving, isError } = useResolvedClinic();
+  const urlSegment = clinicSlug ?? "";
   const navigate = useNavigate();
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [loading, setLoading] = useState(false);
@@ -143,11 +146,13 @@ export default function SurveyEdit() {
           setSectorId(s.sectorId ?? "");
           setQuestions(s.questions);
           setPublishedLink(
-            s.status === "published" ? `${window.location.origin}/p/${clinicId}/${s.slug}` : null
+            s.status === "published" && urlSegment
+              ? `${window.location.origin}/p/${urlSegment}/${s.slug}`
+              : null
           );
         } else {
           toast.error("Pesquisa não encontrada.");
-          navigate(`/clinicas/${clinicId}/pesquisa`);
+          navigate(`/clinicas/${urlSegment}/pesquisa`);
         }
       } catch {
         toast.error("Falha ao carregar a pesquisa.");
@@ -159,7 +164,7 @@ export default function SurveyEdit() {
     return () => {
       cancelled = true;
     };
-  }, [id, clinicId, navigate]);
+  }, [id, clinicId, navigate, urlSegment]);
 
   const handleSaveDraft = async () => {
     const slug = survey?.slug ?? slugify(name || sector || "pesquisa");
@@ -190,7 +195,7 @@ export default function SurveyEdit() {
 
     setSurvey(toSave);
     if (!id) {
-      navigate(`/clinicas/${clinicId}/pesquisa`, { replace: true });
+      navigate(`/clinicas/${urlSegment}/pesquisa`, { replace: true });
     }
     toast.success("Rascunho salvo.");
   };
@@ -227,10 +232,10 @@ export default function SurveyEdit() {
     }
 
     setSurvey(toSave);
-    setPublishedLink(`${window.location.origin}/p/${clinicId}/${toSave.slug}`);
+    setPublishedLink(`${window.location.origin}/p/${urlSegment}/${toSave.slug}`);
     toast.success("Pesquisa publicada! O link está pronto para compartilhar.");
     if (!id) {
-      navigate(`/clinicas/${clinicId}/pesquisa`, { replace: true });
+      navigate(`/clinicas/${urlSegment}/pesquisa`, { replace: true });
     }
   };
 
@@ -300,7 +305,15 @@ export default function SurveyEdit() {
     toast.success("Modelo hospital (2 painéis) aplicado. Revise o título e salve ou publique.");
   };
 
-  if (loading || (!survey && !!id) || !clinicId) return null;
+  if (clinicResolving) return null;
+  if (isError || !clinicId) {
+    return (
+      <AdminLayout>
+        <p className="text-muted-foreground">Clínica não encontrada.</p>
+      </AdminLayout>
+    );
+  }
+  if (loading || (!survey && !!id)) return null;
 
   return (
     <AdminLayout>
@@ -315,7 +328,7 @@ export default function SurveyEdit() {
             </p>
           </div>
           <Button variant="outline" asChild>
-            <Link to={`/clinicas/${clinicId}/pesquisa`}>Voltar</Link>
+            <Link to={`/clinicas/${urlSegment}/pesquisa`}>Voltar</Link>
           </Button>
         </div>
 
@@ -355,7 +368,7 @@ export default function SurveyEdit() {
                 </SelectContent>
               </Select>
               <Button variant="outline" size="sm" asChild className="shrink-0">
-                <Link to={`/clinicas/${clinicId}/setores`}>Gerenciar setores</Link>
+                <Link to={`/clinicas/${urlSegment}/setores`}>Gerenciar setores</Link>
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">

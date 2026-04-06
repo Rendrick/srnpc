@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +21,8 @@ import {
 import { toast } from "sonner";
 
 export default function SurveyList() {
-  const { clinicId } = useParams<{ clinicId: string }>();
+  const { clinicId, clinicSlug, loading: clinicResolving, isError } = useResolvedClinic();
+  const urlSegment = clinicSlug ?? "";
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,11 +61,19 @@ export default function SurveyList() {
   };
 
   const copyPublicUrl = (slug: string) => {
-    if (!clinicId) return;
-    const url = `${window.location.origin}/p/${clinicId}/${slug}`;
+    if (!urlSegment) return;
+    const url = `${window.location.origin}/p/${urlSegment}/${slug}`;
     navigator.clipboard.writeText(url);
     toast.success("Link copiado!");
   };
+
+  if (!clinicResolving && (isError || !clinicId)) {
+    return (
+      <AdminLayout>
+        <p className="text-muted-foreground">Clínica não encontrada.</p>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
@@ -74,14 +84,14 @@ export default function SurveyList() {
             <p className="text-muted-foreground">Crie e gerencie pesquisas NPS por setor</p>
           </div>
           <Button asChild>
-            <Link to={`/clinicas/${clinicId}/pesquisa/nova`}>
+            <Link to={`/clinicas/${urlSegment}/pesquisa/nova`}>
               <ClipboardPlus className="w-4 h-4 mr-2" />
               Nova pesquisa
             </Link>
           </Button>
         </div>
 
-        {loading ? (
+        {clinicResolving || loading ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <p className="text-muted-foreground">Carregando...</p>
@@ -92,7 +102,7 @@ export default function SurveyList() {
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <p className="text-muted-foreground mb-4">Nenhuma pesquisa criada ainda.</p>
               <Button asChild>
-                <Link to={`/clinicas/${clinicId}/pesquisa/nova`}>
+                <Link to={`/clinicas/${urlSegment}/pesquisa/nova`}>
                   <ClipboardPlus className="w-4 h-4 mr-2" />
                   Criar primeira pesquisa
                 </Link>
@@ -115,7 +125,7 @@ export default function SurveyList() {
                       {survey.status === "published" ? "Publicada" : "Rascunho"}
                     </Badge>
                     <Button variant="outline" size="icon" asChild>
-                      <Link to={`/clinicas/${clinicId}/pesquisa/${survey.id}/editar`} title="Editar">
+                      <Link to={`/clinicas/${urlSegment}/pesquisa/${survey.id}/editar`} title="Editar">
                         <Pencil className="w-4 h-4" />
                       </Link>
                     </Button>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 import { getCategory, getCategoryLabel, type NpsCategory } from "@/data/mockNps";
 import { getSurveys, getUnifiedResponsesFromStore } from "@/data/surveyStore";
 import type { UnifiedNpsResponse } from "@/data/surveyStore";
@@ -30,7 +30,7 @@ const badgeClass: Record<NpsCategory, string> = {
 };
 
 export default function Responses() {
-  const { clinicId } = useParams<{ clinicId: string }>();
+  const { clinicId, loading: clinicResolving, isError } = useResolvedClinic();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [surveyFilter, setSurveyFilter] = useState<string>("all");
@@ -50,7 +50,7 @@ export default function Responses() {
         setSurveys(s);
       } catch {
         if (cancelled) return;
-        setAllResponses(await buildUnifiedResponses(clinicId));
+        setAllResponses([]);
         setSurveys([]);
       } finally {
         if (!cancelled) setLoading(false);
@@ -76,12 +76,20 @@ export default function Responses() {
     });
   }, [allResponses, search, categoryFilter, surveyFilter]);
 
-  if (loading) {
+  if (clinicResolving || loading) {
     return (
       <AdminLayout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <p className="text-muted-foreground">Carregando...</p>
         </div>
+      </AdminLayout>
+    );
+  }
+
+  if (isError || !clinicId) {
+    return (
+      <AdminLayout>
+        <p className="text-muted-foreground">Clínica não encontrada.</p>
       </AdminLayout>
     );
   }

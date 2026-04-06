@@ -1,6 +1,7 @@
 import { LayoutDashboard, MessageSquareText, BarChart3, ClipboardPlus, Activity, Building2 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useParams } from "react-router-dom";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 import {
   Sidebar,
   SidebarContent,
@@ -12,15 +13,13 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useClinic } from "@/hooks/useClinic";
-
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const { clinicId } = useParams<{ clinicId?: string }>();
-  const { name: clinicName, loading: clinicLoading } = useClinic(clinicId);
-
-  const base = clinicId ? `/clinicas/${clinicId}` : "/clinicas";
+  const { clinicSlug: routeParam } = useParams<{ clinicSlug?: string }>();
+  const { clinicName, loading: clinicLoading, clinicSlug: resolvedSlug } = useResolvedClinic();
+  const urlSegment = resolvedSlug ?? routeParam;
+  const base = urlSegment ? `/clinicas/${urlSegment}` : "/clinicas";
 
   const items = [
     { title: "Dashboard", url: base, icon: LayoutDashboard },
@@ -30,7 +29,7 @@ export function AppSidebar() {
     { title: "Setores", url: `${base}/setores`, icon: Building2 },
   ];
 
-  const subtitleLine = !clinicId
+  const subtitleLine = !routeParam
     ? "Área administrativa"
     : clinicLoading
       ? null
@@ -46,7 +45,7 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="overflow-hidden min-w-0 flex-1">
               <h2 className="text-sm font-semibold text-sidebar-foreground truncate leading-tight">ServiceRapide NPS</h2>
-              {clinicId && clinicLoading ? (
+              {routeParam && clinicLoading ? (
                 <Skeleton className="h-3.5 w-32 max-w-full mt-1.5 bg-sidebar-accent" />
               ) : (
                 <p className="text-xs text-sidebar-foreground/70 truncate mt-0.5">{subtitleLine}</p>
@@ -62,7 +61,7 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
-                      end={item.url === "/clinicas"}
+                      end={item.url === base}
                       className="hover:bg-sidebar-accent/50"
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold"
                     >

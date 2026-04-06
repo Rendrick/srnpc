@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 import { calculateNpsScore, getDistribution } from "@/data/mockNps";
 import {
   getSurveys,
@@ -65,7 +66,8 @@ function sectorGroupLabel(
 }
 
 export default function Reports() {
-  const { clinicId } = useParams<{ clinicId: string }>();
+  const { clinicId, clinicSlug, loading: clinicResolving, isError } = useResolvedClinic();
+  const urlSegment = clinicSlug ?? "";
   const [periodDays, setPeriodDays] = useState("30");
   const [surveyFilter, setSurveyFilter] = useState("all");
   const [sectorFilter, setSectorFilter] = useState("all");
@@ -161,12 +163,20 @@ export default function Reports() {
     }));
   }, [filtered]);
 
-  if (loading) {
+  if (clinicResolving || loading) {
     return (
       <AdminLayout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <p className="text-muted-foreground">Carregando...</p>
         </div>
+      </AdminLayout>
+    );
+  }
+
+  if (isError || !clinicId) {
+    return (
+      <AdminLayout>
+        <p className="text-muted-foreground">Clínica não encontrada.</p>
       </AdminLayout>
     );
   }
@@ -179,8 +189,8 @@ export default function Reports() {
             <h2 className="text-2xl font-bold text-foreground">Relatórios</h2>
             <p className="text-muted-foreground">NPS, motivadores (polegares) e desempenho por setor</p>
           </div>
-          {clinicId ? (
-            <ButtonLink to={`/clinicas/${clinicId}/respostas`}>
+          {urlSegment ? (
+            <ButtonLink to={`/clinicas/${urlSegment}/respostas`}>
               <ExternalLink className="w-4 h-4 mr-2" />
               Ver no extrato
             </ButtonLink>

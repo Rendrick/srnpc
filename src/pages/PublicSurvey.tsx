@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { ClipboardList, Send, ThumbsDown, ThumbsUp } from "lucide-react";
 import { getSurveyBySlug, addResponse } from "@/data/surveyStore";
+import { useResolvedPublicClinic } from "@/hooks/useResolvedClinic";
 import { SplitHospitalSurveyLayout } from "@/components/SplitHospitalSurveyLayout";
 import type { Survey, SurveyQuestion } from "@/types/survey";
 import { thumbsRowAnswerKey } from "@/types/survey";
@@ -50,27 +51,37 @@ function getScoreEmojiContainerClasses(score: number | null) {
 }
 
 export default function PublicSurvey() {
-  const { slug, clinicId } = useParams<{ clinicId: string; slug: string }>();
+  const { slug: surveySlug } = useParams<{ clinicSlug: string; slug: string }>();
+  const { clinicId, loading: clinicResolving, isError } = useResolvedPublicClinic();
   const [survey, setSurvey] = useState<Survey | null>(null);
+  const [surveyLoading, setSurveyLoading] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string | number>>({});
   const [submitted, setSubmitted] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let cancelled = false;
+    if (!surveySlug || !clinicId) {
+      setSurvey(null);
+      setSurveyLoading(false);
+      return;
+    }
+    setSurveyLoading(true);
     (async () => {
-      if (!slug || !clinicId) return;
       try {
-        const s = await getSurveyBySlug(slug, clinicId);
+        const s = await getSurveyBySlug(surveySlug, clinicId);
         if (!cancelled) setSurvey(s ?? null);
       } catch {
         if (!cancelled) toast.error("Falha ao carregar a pesquisa.");
+        if (!cancelled) setSurvey(null);
+      } finally {
+        if (!cancelled) setSurveyLoading(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [slug, clinicId]);
+  }, [surveySlug, clinicId]);
 
   const setAnswer = (questionId: string, value: string | number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -114,7 +125,42 @@ export default function PublicSurvey() {
     }
   };
 
-  if (!slug || !clinicId) return null;
+  if (clinicResolving) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full text-center">
+          <CardContent className="p-10">
+            <p className="text-muted-foreground">Carregando...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!surveySlug) return null;
+  if (!clinicResolving && (isError || !clinicId)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full text-center">
+          <CardContent className="p-10">
+            <p className="text-muted-foreground">Clínica não encontrada ou sem pesquisa pública.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  if (surveyLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full text-center">
+          <CardContent className="p-10">
+            <p className="text-muted-foreground">Carregando...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (!survey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">

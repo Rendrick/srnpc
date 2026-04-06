@@ -30,19 +30,19 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/superadmin" element={<RequireAuth><Superadmin /></RequireAuth>} />
             <Route path="/clinicas" element={<RequireAuth><Clinics /></RequireAuth>} />
-            <Route path="/clinicas/:clinicId" element={<RequireAuth><Index /></RequireAuth>} />
-            <Route path="/clinicas/:clinicId/pesquisa" element={<RequireAuth><SurveyList /></RequireAuth>} />
-            <Route path="/clinicas/:clinicId/pesquisa/nova" element={<RequireAuth><SurveyEdit /></RequireAuth>} />
-            <Route path="/clinicas/:clinicId/pesquisa/:id/editar" element={<RequireAuth><SurveyEdit /></RequireAuth>} />
-            <Route path="/clinicas/:clinicId/respostas" element={<RequireAuth><Responses /></RequireAuth>} />
-            <Route path="/clinicas/:clinicId/relatorios" element={<RequireAuth><Reports /></RequireAuth>} />
-            <Route path="/clinicas/:clinicId/setores" element={<RequireAuth><ClinicSectors /></RequireAuth>} />
+            <Route path="/clinicas/:clinicSlug" element={<RequireAuth><Index /></RequireAuth>} />
+            <Route path="/clinicas/:clinicSlug/pesquisa" element={<RequireAuth><SurveyList /></RequireAuth>} />
+            <Route path="/clinicas/:clinicSlug/pesquisa/nova" element={<RequireAuth><SurveyEdit /></RequireAuth>} />
+            <Route path="/clinicas/:clinicSlug/pesquisa/:id/editar" element={<RequireAuth><SurveyEdit /></RequireAuth>} />
+            <Route path="/clinicas/:clinicSlug/respostas" element={<RequireAuth><Responses /></RequireAuth>} />
+            <Route path="/clinicas/:clinicSlug/relatorios" element={<RequireAuth><Reports /></RequireAuth>} />
+            <Route path="/clinicas/:clinicSlug/setores" element={<RequireAuth><ClinicSectors /></RequireAuth>} />
 
             <Route path="/" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
             <Route path="/pesquisa" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
             <Route path="/pesquisa/nova" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
             <Route path="/pesquisa/:id/editar" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
-            <Route path="/p/:clinicId/:slug" element={<PublicSurvey />} />
+            <Route path="/p/:clinicSlug/:slug" element={<PublicSurvey />} />
             <Route path="/respostas" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
             <Route path="/relatorios" element={<RequireAuth><Navigate to="/clinicas" replace /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />

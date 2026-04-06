@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
 import { AdminLayout } from "@/components/AdminLayout";
+import { useResolvedClinic } from "@/hooks/useResolvedClinic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { calculateNpsScore, getDistribution } from "@/data/mockNps";
 import { getSurveys, getUnifiedResponsesFromStore } from "@/data/surveyStore";
@@ -31,7 +31,7 @@ async function buildUnifiedResponses(clinicId: string): Promise<UnifiedNpsRespon
 }
 
 export default function Dashboard() {
-  const { clinicId } = useParams<{ clinicId: string }>();
+  const { clinicId, loading: clinicResolving, isError } = useResolvedClinic();
   const [surveyFilter, setSurveyFilter] = useState<string>("all");
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [allResponses, setAllResponses] = useState<UnifiedNpsResponse[]>([]);
@@ -50,8 +50,7 @@ export default function Dashboard() {
       } catch {
         if (cancelled) return;
         setSurveys([]);
-        // buildUnifiedResponses já protege falhas do store; aqui só tratamos erro do getSurveys.
-        setAllResponses(await buildUnifiedResponses());
+        setAllResponses([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -101,12 +100,20 @@ export default function Dashboard() {
       ? (filtered.reduce((s, r) => s + r.score, 0) / filtered.length).toFixed(1)
       : "0";
 
-  if (loading) {
+  if (clinicResolving || loading) {
     return (
       <AdminLayout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <p className="text-muted-foreground">Carregando...</p>
         </div>
+      </AdminLayout>
+    );
+  }
+
+  if (isError || !clinicId) {
+    return (
+      <AdminLayout>
+        <p className="text-muted-foreground">Clínica não encontrada.</p>
       </AdminLayout>
     );
   }

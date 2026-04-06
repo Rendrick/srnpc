@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/AuthContext";
 type Clinic = {
   id: string;
   name: string;
+  slug?: string | null;
   created_at?: string;
 };
 
@@ -43,7 +44,7 @@ export default function Clinics() {
 
         const { data: clinicsData, error: clinicsErr } = await supabase
           .from("clinics")
-          .select("id, name, created_at")
+          .select("id, name, slug, created_at")
           .in("id", clinicIds);
         if (clinicsErr) throw clinicsErr;
 
@@ -52,7 +53,8 @@ export default function Clinics() {
         if (!cancelled) setClinics(list);
 
         if (!cancelled && list.length === 1) {
-          navigate(`/clinicas/${list[0].id}`, { replace: true });
+          const seg = list[0].slug?.trim() || list[0].id;
+          navigate(`/clinicas/${seg}`, { replace: true });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -117,7 +119,7 @@ export default function Clinics() {
                   <p className="font-semibold truncate">{c.name}</p>
                   <p className="text-xs text-muted-foreground truncate font-mono">{c.id}</p>
                 </div>
-                <Button onClick={() => navigate(`/clinicas/${c.id}`)} variant="default">
+                <Button onClick={() => navigate(`/clinicas/${c.slug?.trim() || c.id}`)} variant="default">
                   Entrar
                 </Button>
               </CardContent>
